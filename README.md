@@ -1,7 +1,7 @@
 # PD-PPS_VariablePowerSupply
 
 # License
-The software in this repository is based on wagiminator's Development-Boards.
+The software in this repository is based on wagiminator's Development-Boards.  
 [wagiminator/Development-Boards/CH32X035F7P6_DevBoard](https://github.com/wagiminator/Development-Boards/tree/main/CH32X035F7P6_DevBoard)
 
 ![license.png](https://i.creativecommons.org/l/by-sa/3.0/88x31.png)
