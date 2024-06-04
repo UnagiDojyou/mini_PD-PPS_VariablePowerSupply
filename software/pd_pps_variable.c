@@ -18,7 +18,7 @@
 #define V_ADC PA4
 #define I_ADC PA6
 #define ONOFF PA5
-#define CVCC PA7
+#define CVCC PA7 //low:V high:A
 #define BUTTON PC17
 
 #define SEG_A1 PB12
@@ -41,26 +41,34 @@
 #define LONGCOUNT 250
 #define SHORTCOUNT 2
 
-#define V_COEFF 5809 //5.809
-#define I_COEFF 8057 //8.057
-
 #define MAXCOUNT 100
 #define LONGPUSH_SPEED 100 //supeed of long push down/up
 
-#define KEEPTIME 100 //Prevents the reset after about 10 seconds
+#define KEEPTIME 80 //Prevents the reset after about 10 seconds
+
+#define USE_FLASH_ADD 0x800BF00 //page192
+#define V_A_ADD USE_FLASH_ADD
+#define V_B_ADD (V_A_ADD + 0x4)
+#define I_A_ADD (V_B_ADD + 0x4)
+
+#define FLASH_END 0x0800F7FF //end of main flash memory
+
+#define CALV1 5000 //calictaion at 5V
+#define CALV2 18000 //calictaion at 18V
+#define CALA 3000 ////calictaion at 3A
 
 void disable_swd(void) {
-  uint32_t temp = AFIO->PCFR1;  // 現在のレジスタ値を読み込む
-  temp &= ~AFIO_PCFR1_SWJ_CFG;          // 対象ビットフィールドをクリア
-  temp |= 0x04000000;           // SWJ_CFGを100 (バイナリ) に設定
-  AFIO->PCFR1 = temp;           // 新しい値をレジスタに書き込む
+  uint32_t temp = AFIO->PCFR1; //read reg
+  temp &= ~AFIO_PCFR1_SWJ_CFG; //clear SWG_CFG
+  temp |= 0x04000000; //set SWJ_CFG as 100
+  AFIO->PCFR1 = temp; //write reg
 }
 
 void enable_AFIO(void) {
-  uint32_t temp = RCC->APB2PCENR;  // 現在のレジスタ値を読み込む
-  temp &= ~RCC_AFIOEN;          // 対象ビットフィールドをクリア
-  temp |= 0x00000001;           // AFIOENを1 (バイナリ) に設定
-  RCC->APB2PCENR = temp;           // 新しい値をレジスタに書き込む
+  uint32_t temp = RCC->APB2PCENR; //read reg
+  temp &= ~RCC_AFIOEN; //clear RCC_AFIOEN
+  temp |= 0x00000001; //set AFIOEN
+  RCC->APB2PCENR = temp; //write reg
 }
 
 void segregisterset(uint8_t num){
@@ -177,6 +185,12 @@ void segregisterset(uint8_t num){
       GPIOA->BSHR = 0b00000000000000000000000000001111;
       GPIOB->BSHR = 0b00000000000000100001000000000000;
       GPIOC->BSHR = 0b00000000000010000000000000000010;
+      GPIOC->BSXR = 0b00000000000011010000000000000000;
+      break;
+    case 19: //E
+      GPIOA->BSHR = 0b00000000000000000000000000001111;
+      GPIOB->BSHR = 0b00000000000000000001000000000010;
+      GPIOC->BSHR = 0b00000000000000000000000000001010;
       GPIOC->BSXR = 0b00000000000011010000000000000000;
       break;
     default:
@@ -398,6 +412,170 @@ void setmode(){
   setdefaultmode();
 }
 
+bool UnlockFlash(){
+  FLASH->KEYR = FLASH_KEY1;
+  FLASH->KEYR = FLASH_KEY2;
+  uint32_t temp = FLASH->CTLR; //read FLASH_CTLR
+  return !(temp & FLASH_CTLR_LOCK);
+}
+
+bool FastUnlockFlash(){
+  FLASH->MODEKEYR = FLASH_KEY1;
+  FLASH->MODEKEYR = FLASH_KEY2;
+  uint32_t temp = FLASH->CTLR; //read FLASH_CTLR
+  return !(temp & FLASH_CTLR_FLOCK);
+}
+
+//when EOP is 1 return true,else return false
+bool WaitFlashBusy(){
+  uint32_t temp;
+  do{
+    temp = FLASH->STATR; //read FLASH_STATR
+  }while(temp & FLASH_STATR_BSY); //while(BSY==1)
+  if(!(temp & FLASH_STATR_EOP)){ //check EOP
+    FLASH->CTLR = 0; //reset CTLR
+    return false;
+  }
+  FLASH->STATR = temp; //reset EOP
+  return true;
+}
+
+//Erase Flash Page(256Byte). "address" is Page start address.
+bool FastEraseFlash(uint32_t address){
+  //1) check locks
+  uint32_t temp = FLASH->CTLR; //read FLASH_CTLR
+  if(temp & FLASH_CTLR_LOCK){ //check lock
+    if(!UnlockFlash()){
+      return false;
+    }
+  }
+  //2)
+  temp = FLASH->CTLR;
+  if(temp & FLASH_CTLR_FLOCK){ //check flock
+    if(!FastUnlockFlash()){
+      return false;
+    }
+  }
+  //3) check other operation
+  WaitFlashBusy();
+  //4) set erase mode
+  FLASH->CTLR = FLASH_CTLR_FTER; //set FTER bit
+  //5) set erase address
+  FLASH->ADDR = address;
+  //6) start erasec
+  temp = FLASH->CTLR;
+  temp |= FLASH_CTLR_STRT; //set FTER STRT
+  FLASH->CTLR = temp; //write reg
+  //7,8) wait erase
+  if(!WaitFlashBusy())return false;
+  //9) reset CTRL
+  FLASH->CTLR = 0;
+  return true;
+}
+
+//Write Flash only 16Byte. "message" must be uint32_t[4]. "address" is Page start address.
+bool FastWriteFlash16(uint32_t address,uint32_t *message){
+  //check locks
+  uint32_t temp = FLASH->CTLR; //read FLASH_CTLR
+  if(temp & FLASH_CTLR_LOCK){ //check lock
+    if(!UnlockFlash()){
+      return false;
+    }
+  }
+  temp = FLASH->CTLR;
+  if(temp & FLASH_CTLR_FLOCK){ //check flock
+    if(!FastUnlockFlash()){
+      return false;
+    }
+  }
+  //3) check other operation
+  WaitFlashBusy();
+  //4) set programming mode
+  FLASH->CTLR = FLASH_CTLR_FTPG; //set FTPG
+  //15)
+  for(int i = 0;i < 16;i++){
+    //5)
+    temp = FLASH->CTLR;
+    temp |= FLASH_CTLR_BUFRST; //set BUFRST
+    FLASH->CTLR = temp; //write reg
+    //6) wait buffa reset
+    if(!WaitFlashBusy())return false;
+    //10)
+    for(int j = 0;j < 4;j++){
+      if(i == 0){
+        //7) writedata
+        *(volatile uint32_t*)(address+(i * 0x10)+(j * 4)) = message[j];
+      }else{
+        *(volatile uint32_t*)(address+(i * 0x10)+(j * 4)) = 0xFFFFFFFF;
+      }
+      //8) BUFLOAD
+      temp = FLASH->CTLR;
+      temp |= FLASH_CTLR_BUFLOAD; //set BUFLOAD
+      FLASH->CTLR = temp; //write reg
+      //9) wait BUFFLOAD
+      WaitFlashBusy();
+    }
+    //11)
+    FLASH->ADDR = address;
+    //12)
+    temp = FLASH->CTLR;
+    temp |= FLASH_CTLR_STRT;
+    FLASH->CTLR = temp;
+    //13)
+    if(!WaitFlashBusy())return false;
+  }
+  FLASH->CTLR = 0; //reset CTLR
+  return true;
+}
+
+
+//lock flash write
+void relockFlash(){
+  WaitFlashBusy();
+  uint32_t temp = 0x00008080;
+  FLASH->CTLR = temp;
+}
+
+//read flash
+uint32_t ReadFlash32(uint32_t address){
+  if(FLASH_BASE <= address && address < FLASH_END){
+    WaitFlashBusy();
+    return (*(volatile const uint32_t*)(address));
+  }
+  return 0;
+}
+
+uint32_t V_a = 0;
+int32_t V_b = 0;
+uint32_t I_a = 0;
+bool readcoeff(){
+  V_a = ReadFlash32(V_A_ADD);
+  V_b = (int32_t)ReadFlash32(V_B_ADD);
+  I_a = ReadFlash32(I_A_ADD);
+  return !(V_a == 0xFFFFFFFF || V_b == 0xFFFFFFFF || I_a == 0xFFFFFFFF || V_a == 0 || I_a == 0);
+}
+
+bool writeceff(){
+  if(V_a == 0 && V_b == 0 && I_a == 0){ //can't read flash
+    return false;
+  }
+  if(!(ReadFlash32(I_A_ADD + 0x4) == 0xFFFFFFFF)){ //check using
+    return false;
+  }
+  if(!(ReadFlash32(V_A_ADD - 0x4) == 0xFFFFFFFF)){ //check using
+    return false;
+  }
+  if(!FastEraseFlash(USE_FLASH_ADD)){
+    return false;
+  }
+  uint32_t message[4] = {V_a, V_b, I_a,0xFFFFFFFF};
+  if(!FastWriteFlash16(USE_FLASH_ADD,message)){
+    return false;
+  }
+  relockFlash();
+  return true;
+}
+
 void ppsmode();
 void fiveVmode();
 void fixmode();
@@ -444,6 +622,10 @@ int main(void) {
   }
 
   setmode();
+
+  if(!readcoeff()){
+    mode = 3;
+  }
   
   PIN_output(SEG_A1);
   PIN_output(SEG_A2);
@@ -469,7 +651,7 @@ int main(void) {
 void ppsmode(){
   uint16_t count = 0;
   uint16_t countkeep = 0;
-  uint16_t mes_Voltage = 0;
+  int32_t mes_Voltage = 0;
   uint16_t mes_Current = 0;
   uint32_t sum_Voltage = 0;
   uint32_t sum_Current = 0;
@@ -499,9 +681,9 @@ void ppsmode(){
   }
 
   //disp PPS
-  seg_num[0] = 15;
-  seg_num[1] = 15;
-  seg_num[2] = 5;
+  seg_num[0] = 15; //P
+  seg_num[1] = 15; //P
+  seg_num[2] = 5; //S
   do{
     count = readbotton();
     DLY_ms(1);
@@ -538,7 +720,8 @@ void ppsmode(){
 
   while(1){
     ADC_input(V_ADC);
-    mes_Voltage = (uint32_t)ADC_read() * V_COEFF / 1000;
+    mes_Voltage = (ADC_read() * V_a + V_b) / 1000;
+    if(mes_Voltage < 0) mes_Voltage = 0;
     sum_Voltage += mes_Voltage;
     if(set_Voltage*0.9 >= mes_Voltage || mes_Voltage >= set_Voltage*1.1){ //stop over voltage
       if(output){
@@ -549,7 +732,7 @@ void ppsmode(){
     }
     DLY_ms(1);
     ADC_input(I_ADC);
-    mes_Current = (uint32_t)ADC_read() * I_COEFF / 1000;
+    mes_Current = (uint32_t)ADC_read() * I_a / 1000;
     sum_Current += mes_Current;
 
     dispseg();
@@ -662,7 +845,7 @@ void ppsmode(){
 
 void fixmode(){
   uint16_t count = 0;
-  uint16_t mes_Voltage = 0;
+  int32_t mes_Voltage = 0;
   uint16_t mes_Current = 0;
   uint32_t sum_Voltage = 0;
   uint32_t sum_Current = 0;
@@ -695,7 +878,8 @@ void fixmode(){
 
   while(1){
     ADC_input(V_ADC);
-    mes_Voltage = (uint32_t)ADC_read() * V_COEFF / 1000;
+    mes_Voltage = (ADC_read() * V_a + V_b) / 1000;
+    if(mes_Voltage < 0) mes_Voltage = 0;
     sum_Voltage += mes_Voltage;
     if(PD_getPDOVoltage(pdonum)*0.9 >= mes_Voltage || mes_Voltage >= PD_getPDOVoltage(pdonum)*1.1){ //stop over voltage
       if(output){
@@ -706,7 +890,7 @@ void fixmode(){
     }
     DLY_ms(1);
     ADC_input(I_ADC);
-    mes_Current = (uint32_t)ADC_read() * I_COEFF / 1000;
+    mes_Current = (uint32_t)ADC_read() * I_a / 1000;
     sum_Current += mes_Current;
 
     dispseg();
@@ -787,7 +971,7 @@ void fixmode(){
 
 void fiveVmode(){
   uint16_t count = 0;
-  uint16_t mes_Voltage = 0;
+  int32_t mes_Voltage = 0;
   uint16_t mes_Current = 0;
   uint32_t sum_Voltage = 0;
   uint32_t sum_Current = 0;
@@ -813,7 +997,8 @@ void fiveVmode(){
 
   while(1){
     ADC_input(V_ADC);
-    mes_Voltage = (uint32_t)ADC_read() * V_COEFF / 1000;
+    mes_Voltage = (ADC_read() * V_a + V_b) / 1000;
+    if(mes_Voltage < 0) mes_Voltage = 0;
     sum_Voltage += mes_Voltage;
     if(set_Voltage*0.9 >= mes_Voltage || mes_Voltage >= set_Voltage*1.1){ //stop over voltage
       if(output){
@@ -824,7 +1009,7 @@ void fiveVmode(){
     }
     DLY_ms(1);
     ADC_input(I_ADC);
-    mes_Current = (uint32_t)ADC_read() * I_COEFF / 1000;
+    mes_Current = (uint32_t)ADC_read() * I_a / 1000;
     sum_Current += mes_Current;
 
     dispseg();
@@ -869,6 +1054,10 @@ void fiveVmode(){
 
 void calmode(){
   uint16_t count = 0;
+  uint32_t sum = 0;
+  uint32_t aveV1 = 0;
+  uint32_t aveV2 = 0;
+  uint32_t aveA = 0;
   //disp 5
   seg_num[0] = 16; //C
   seg_num[1] = 17; //A
@@ -878,5 +1067,92 @@ void calmode(){
     DLY_ms(1);
     dispseg();
   }while(count < BUTTON_DOWN || BUTTON_OP < count);
+
+  //calivration 5.00V
+  setseg(CALV1,false);
+  PIN_output(CVCC);
+  PIN_low(CVCC);
+  do{
+    count = readbotton();
+    DLY_ms(1);
+    dispseg();
+  }while(count < BUTTON_DOWN || BUTTON_OP < count);
+  sum = 0;
+  for(int i = 0; i < MAXCOUNT; i++){
+    ADC_input(V_ADC);
+    DLY_ms(1);
+    sum += ADC_read();
+  }
+  aveV1 = (100 * sum) / MAXCOUNT;
+
+  //calivration 18.00V
+  setseg(CALV2,false);
+  PIN_low(CVCC);
+  do{
+    count = readbotton();
+    DLY_ms(1);
+    dispseg();
+  }while(count < BUTTON_DOWN || BUTTON_OP < count);
+  sum = 0;
+  for(int i = 0; i < MAXCOUNT; i++){
+    ADC_input(V_ADC);
+    DLY_ms(1);
+    sum += ADC_read();
+  }
+  aveV2 = (100 * sum) / MAXCOUNT;
+
+  //calivration 3.00A
+  setseg(CALA,false);
+  PIN_high(CVCC);
+  PIN_high(ONOFF);
+  do{
+    count = readbotton();
+    DLY_ms(1);
+    dispseg();
+  }while(count < BUTTON_DOWN || BUTTON_OP < count);
+  sum = 0;
+  for(int i = 0; i < MAXCOUNT; i++){
+    ADC_input(I_ADC);
+    DLY_ms(1);
+    sum += ADC_read();
+  }
+  aveA = (100 * sum) / MAXCOUNT;
+  PIN_low(ONOFF);
+
+  V_a = 1000 * 100 * (CALV2 - CALV1)/(aveV2 - aveV1);
+  V_b = 1000 * CALV2 - ((V_a * aveV2) / 100);
+  I_a = 1000 * 100 * CALA / aveA;
+
+  //disp result
+  setseg(V_a,false);
+  PIN_low(CVCC);
+  do{
+    count = readbotton();
+    DLY_ms(1);
+    dispseg();
+  }while(count < BUTTON_DOWN || BUTTON_OP < count);
+  
+  setseg(I_a,false);
+  PIN_high(CVCC);
+  do{
+    count = readbotton();
+    DLY_ms(1);
+    dispseg();
+  }while(count < BUTTON_DOWN || BUTTON_OP < count);
+
+  if(!writeceff()){
+    //error
+    seg_num[0] = 10; //" "
+    seg_num[1] = 19; //E
+    seg_num[2] = 10; //" "
+    seg_digit = 0;
+    while(1){
+      dispseg();
+      DLY_ms(1);
+    }
+  }else{
+    //sucess
+    RST_now();
+  }
 }
 
