@@ -11,6 +11,9 @@
 #include <gpio.h>               // GPIO functions
 #include <usbpd_sink.h>
 
+//if DEBUG is defined, calibration is not enable.
+//#define DEBUG
+
 #define bool _Bool
 #define false ((bool)+0)
 #define true ((bool)+1)
@@ -56,6 +59,10 @@
 #define CALV1 5000 //calictaion at 5V
 #define CALV2 18000 //calictaion at 18V
 #define CALA 3000 ////calictaion at 3A
+#define R3 0.1 //0.1Ω
+#define R8 47000 //47kΩ
+#define R9 7500 //7.5kΩ
+#define VDD 3000 //3V
 
 void disable_swd(void) {
   uint32_t temp = AFIO->PCFR1; //read reg
@@ -609,8 +616,6 @@ int main(void) {
   // Setup
   ADC_init();                   // init ADC
   ADC_slow();
-  //DEBUG_init();                     // init DEBUG (TX: PA2, BAUD: 115200, 8N1)
-
 
   if(PD_connect()) {                     // init USB PD
     if(PD_getPPSNum() > 0){
@@ -624,7 +629,14 @@ int main(void) {
   setmode();
 
   if(!readcoeff()){
+    #ifndef DEBUG
     mode = 3;
+    #endif
+    #ifdef DEBUG
+    V_a = (VDD * (R8 + R9) / R9) * 1000 / 4095;
+    V_b = 0;
+    I_a = 1000 * (VDD / (R3 * 4095));
+    #endif
   }
   
   PIN_output(SEG_A1);
@@ -723,6 +735,7 @@ void ppsmode(){
     mes_Voltage = (ADC_read() * V_a + V_b) / 1000;
     if(mes_Voltage < 0) mes_Voltage = 0;
     sum_Voltage += mes_Voltage;
+    #ifndef DEBUG
     if(set_Voltage*0.9 >= mes_Voltage || mes_Voltage >= set_Voltage*1.1){ //stop over voltage
       if(output){
         output = false;
@@ -730,6 +743,7 @@ void ppsmode(){
         outvolt = true;
       }
     }
+    #endif
     DLY_ms(1);
     ADC_input(I_ADC);
     mes_Current = (uint32_t)ADC_read() * I_a / 1000;
@@ -830,12 +844,18 @@ void ppsmode(){
       case BUTTON_OP*10 + BUTTON_OP:
         break;
       case BUTTON_OP:
+        #ifdef DEBUG
+        output =! output;
+        PIN_toggle(ONOFF);
+        #endif
+        #ifndef DEBUG
         if(set_Voltage*0.9 < Voltage && Voltage < set_Voltage*1.1 && !outvolt){
           output =! output;
           PIN_toggle(ONOFF);
         }else{ //Voltage Error
           outvolt = true;
         }
+        #endif
         break;
       default:
         break;
@@ -881,6 +901,7 @@ void fixmode(){
     mes_Voltage = (ADC_read() * V_a + V_b) / 1000;
     if(mes_Voltage < 0) mes_Voltage = 0;
     sum_Voltage += mes_Voltage;
+    #ifndef DEBUG
     if(PD_getPDOVoltage(pdonum)*0.9 >= mes_Voltage || mes_Voltage >= PD_getPDOVoltage(pdonum)*1.1){ //stop over voltage
       if(output){
         output = false;
@@ -888,6 +909,7 @@ void fixmode(){
         outvolt = true;
       }
     }
+    #endif
     DLY_ms(1);
     ADC_input(I_ADC);
     mes_Current = (uint32_t)ADC_read() * I_a / 1000;
@@ -956,12 +978,18 @@ void fixmode(){
         PIN_toggle(CVCC);
         break;
       case BUTTON_OP:
+        #ifdef DEBUG
+        output =! output;
+        PIN_toggle(ONOFF);
+        #endif
+        #ifndef DEBUG
         if(PD_getPDOVoltage(pdonum)*0.9 < Voltage && Voltage < PD_getPDOVoltage(pdonum)*1.1 && !outvolt){
           output =! output;
           PIN_toggle(ONOFF);
         }else{ //Voltage Error
           outvolt = true;
         }
+        #endif
         break;
       default:
         break;
@@ -1000,6 +1028,7 @@ void fiveVmode(){
     mes_Voltage = (ADC_read() * V_a + V_b) / 1000;
     if(mes_Voltage < 0) mes_Voltage = 0;
     sum_Voltage += mes_Voltage;
+    #ifndef DEBUG
     if(set_Voltage*0.9 >= mes_Voltage || mes_Voltage >= set_Voltage*1.1){ //stop over voltage
       if(output){
         output = false;
@@ -1007,6 +1036,7 @@ void fiveVmode(){
         outvolt = true;
       }
     }
+    #endif
     DLY_ms(1);
     ADC_input(I_ADC);
     mes_Current = (uint32_t)ADC_read() * I_a / 1000;
@@ -1037,12 +1067,18 @@ void fiveVmode(){
 
     switch(readbotton()){
       case BUTTON_OP:
+        #ifdef DEBUG
+        output =! output;
+        PIN_toggle(ONOFF);
+        #endif
+        #ifndef DEBUG
         if(set_Voltage*0.9 < Voltage && Voltage < set_Voltage*1.1 && !outvolt){
           output =! output;
           PIN_toggle(ONOFF);
         }else{ //Voltage Error
           outvolt = true;
         }
+        #endif
         break;
       case BUTTON_CVCC:
         dispV =! dispV;
