@@ -804,12 +804,12 @@ void ppsmode(){
         }
         break;
       case BUTTON_DOWN*10+BUTTON_DOWN: //down botton relased
-          set_Voltage += 100;
-          if(!PD_setVoltage(set_Voltage)){
-            outvolt = true;
-          }else{
-            outvolt =false;
-          }
+        if(min_Voltage < set_Voltage) set_Voltage += 100;
+        if(!PD_setVoltage(set_Voltage)){
+          outvolt = true;
+        }else{
+          outvolt =false;
+        }
         break;
       case BUTTON_UP:
         if(dispV && set_Voltage < max_Voltage){
@@ -828,7 +828,7 @@ void ppsmode(){
         }
         break;
       case BUTTON_UP*10+BUTTON_UP: //up botton relased
-        set_Voltage -= 100;
+        if(set_Voltage < max_Voltage) set_Voltage -= 100;
         if(!PD_setVoltage(set_Voltage)){
             outvolt = true;
           }else{
