@@ -304,7 +304,7 @@ uint8_t button_pushing = 0;
 uint16_t button_count = 0; //how long button is pressed
 bool button_sampled = false; //if any button is pushed ,be true
 //short push return Normal,long pushing return *10,release after long press retun *10+
-uint8_t readbotton(){
+uint8_t readbutton(){
   if(PIN_read(BUTTON)){ //HIGH
     if(!button_sampled && seg_driving == SEG_A2){ //when SEG_A1 was low and SEG_A2 is high
       button_pushing = BUTTON_OP;
@@ -748,7 +748,7 @@ void ppsmode(){
   seg_num[1] = 15; //P
   seg_num[2] = 5; //S
   do{
-    count = readbotton();
+    count = readbutton();
     DLY_ms(1);
     dispseg();
   }while(count < BUTTON_DOWN || BUTTON_OP < count);
@@ -758,14 +758,14 @@ void ppsmode(){
   PIN_low(CVCC);
   setseg(max_Voltage,true);
   do{
-    count = readbotton();
+    count = readbutton();
     DLY_ms(1);
     dispseg();
   }while(count < BUTTON_DOWN || BUTTON_OP < count);
   //disp minVoltage
   setseg(min_Voltage,true);
   do{
-    count = readbotton();
+    count = readbutton();
     DLY_ms(1);
     dispseg();
   }while(count < BUTTON_DOWN || BUTTON_OP < count);
@@ -773,7 +773,7 @@ void ppsmode(){
   PIN_high(CVCC);
   setseg(max_Current,true);
   do{
-    count = readbotton();
+    count = readbutton();
     DLY_ms(1);
     dispseg();
   }while(count < BUTTON_DOWN || BUTTON_OP < count);
@@ -834,6 +834,7 @@ void ppsmode(){
         switch(dispmode){
           case DISPWATT:
             dispmode = DISPVOLTAGE;
+            PIN_low(CVCC);
           case DISPVOLTAGE:
             setseg(set_Voltage ,true);
             break;
@@ -850,7 +851,7 @@ void ppsmode(){
       }
     }
 
-    switch(readbotton()){
+    switch(readbutton()){
       case 0: //not pushed
         countflag = false;
         break;
@@ -872,7 +873,7 @@ void ppsmode(){
           countflag = false;
         }
         break;
-      case BUTTON_DOWN*10+BUTTON_DOWN: //down botton relased
+      case BUTTON_DOWN*10+BUTTON_DOWN: //down button relased
         if(min_Voltage < set_Voltage) set_Voltage += 100;
         if(!PD_setVoltage(set_Voltage)){
           outvolt = true;
@@ -896,7 +897,7 @@ void ppsmode(){
           countflag = false;
         }
         break;
-      case BUTTON_UP*10+BUTTON_UP: //up botton relased
+      case BUTTON_UP*10+BUTTON_UP: //up button relased
         if(set_Voltage < max_Voltage) set_Voltage -= 100;
         if(!PD_setVoltage(set_Voltage)){
             outvolt = true;
@@ -963,13 +964,13 @@ void fixmode(){
   seg_num[2] = 14; //X
   if(ppsable){
     do{
-      count = readbotton();
+      count = readbutton();
       DLY_ms(1);
       dispseg();
-    }while(count < BUTTON_DOWN || BUTTON_OP < count);
+    }while(count - 10 * (count / 10) == 0 || count == 255); //long press realse and short press
   }
   do{
-    count = readbotton();
+    count = readbutton();
     DLY_ms(1);
     dispseg();
   }while(count < BUTTON_DOWN || BUTTON_OP < count);
@@ -1028,6 +1029,7 @@ void fixmode(){
         switch(dispmode){
           case DISPWATT:
             dispmode = DISPVOLTAGE;
+            PIN_low(CVCC);
           case DISPVOLTAGE:
             setseg(PD_getPDOVoltage(pdonum) ,true);
             break;
@@ -1041,7 +1043,7 @@ void fixmode(){
       }
     }
 
-    switch(readbotton()){
+    switch(readbutton()){
       case 0:
         break;
       case 255:
@@ -1186,7 +1188,7 @@ void fiveVmode(){
       }
     }
 
-    switch(readbotton()){
+    switch(readbutton()){
       case BUTTON_OP:
         #ifdef DEBUG
         output =! output;
@@ -1232,7 +1234,7 @@ void calmode(){
   seg_num[1] = 17; //A
   seg_num[2] = 18; //Ls
   do{
-    count = readbotton();
+    count = readbutton();
     DLY_ms(1);
     dispseg();
   }while(count < BUTTON_DOWN || BUTTON_OP < count);
@@ -1242,7 +1244,7 @@ void calmode(){
   PIN_output(CVCC);
   PIN_low(CVCC);
   do{
-    count = readbotton();
+    count = readbutton();
     DLY_ms(1);
     dispseg();
   }while(count < BUTTON_DOWN || BUTTON_OP < count);
@@ -1258,7 +1260,7 @@ void calmode(){
   setseg(CALV2,false);
   PIN_low(CVCC);
   do{
-    count = readbotton();
+    count = readbutton();
     DLY_ms(1);
     dispseg();
   }while(count < BUTTON_DOWN || BUTTON_OP < count);
@@ -1275,7 +1277,7 @@ void calmode(){
   PIN_high(CVCC);
   PIN_high(ONOFF);
   do{
-    count = readbotton();
+    count = readbutton();
     DLY_ms(1);
     dispseg();
   }while(count < BUTTON_DOWN || BUTTON_OP < count);
@@ -1296,7 +1298,7 @@ void calmode(){
   setseg(V_a,false);
   PIN_low(CVCC);
   do{
-    count = readbotton();
+    count = readbutton();
     DLY_ms(1);
     dispseg();
   }while(count < BUTTON_DOWN || BUTTON_OP < count);
@@ -1304,7 +1306,7 @@ void calmode(){
   setseg(I_a,false);
   PIN_high(CVCC);
   do{
-    count = readbotton();
+    count = readbutton();
     DLY_ms(1);
     dispseg();
   }while(count < BUTTON_DOWN || BUTTON_OP < count);
@@ -1429,7 +1431,7 @@ void triggermode(){
         }
       }
     }
-    switch(readbotton()){
+    switch(readbutton()){
       case 0: //not pushed
         break;
       case 255: //under processing
@@ -1464,12 +1466,12 @@ void triggersetmode(){
   seg_num[1] = 22; //R
   seg_num[2] = 23; //G
   do{
-    count = readbotton();
+    count = readbutton();
     DLY_ms(1);
     dispseg();
-  }while(count - 10 * (count / 10) == 0 || count == 255); //long press realse and short press
+  }while(count - 10 * (count / 10) == 0 || count == 255); //long press realse or short press
   do{
-    count = readbotton();
+    count = readbutton();
     DLY_ms(1);
     dispseg();
   }while(count < BUTTON_DOWN || BUTTON_OP < count);
@@ -1480,7 +1482,7 @@ void triggersetmode(){
     seg_num[1] = 19; //E
     seg_num[2] = 18; //L
     do{
-      count = readbotton();
+      count = readbutton();
       DLY_ms(1);
       dispseg();
     }while(count < BUTTON_DOWN || BUTTON_OP < count);
@@ -1504,7 +1506,7 @@ void triggersetmode(){
   seg_num[1] = 19; //E
   seg_num[2] = 20; //T
   do{
-    count = readbotton();
+    count = readbutton();
     DLY_ms(1);
     dispseg();
   }while(count < BUTTON_DOWN || BUTTON_OP < count);
@@ -1525,7 +1527,7 @@ void triggersetmode(){
       setseg(triggervoltage, true);
     }
 
-    switch(readbotton()){
+    switch(readbutton()){
       case 0: //not pushed
         countflag = false;
         break;
@@ -1542,7 +1544,7 @@ void triggersetmode(){
           countflag = false;
         }
         break;
-      case BUTTON_DOWN*10+BUTTON_DOWN: //down botton relased
+      case BUTTON_DOWN*10+BUTTON_DOWN: //down button relased
         if(MIN_TRIGGER_V < triggervoltage) triggervoltage += 100;
         break;
       case BUTTON_UP:
@@ -1556,7 +1558,7 @@ void triggersetmode(){
           countflag = false;
         }
         break;
-      case BUTTON_UP*10+BUTTON_UP: //up botton relased
+      case BUTTON_UP*10+BUTTON_UP: //up button relased
         if(triggervoltage < MAX_TRIGGER_V) triggervoltage -= 100;
         break;
       case BUTTON_CVCC:
