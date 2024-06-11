@@ -64,6 +64,10 @@
 #define R9 7500 //7.5kΩ
 #define VDD 3000 //3V
 
+#define DISPVOLTAGE 0
+#define DISPCURRENT 1
+#define DISPWATT 2
+
 void disable_swd(void) {
   uint32_t temp = AFIO->PCFR1; //read reg
   temp &= ~AFIO_PCFR1_SWJ_CFG; //clear SWG_CFG
@@ -676,7 +680,7 @@ void ppsmode(){
   uint16_t Voltage = 0;
   uint16_t Current = 0;
   uint8_t pdonum = 0;
-  bool dispV = true; //V or I
+  uint8_t dispmode = DISPVOLTAGE;
   bool output = false; //OFF
   bool countflag = false;
   bool outvolt = false;
@@ -750,6 +754,13 @@ void ppsmode(){
     sum_Current += mes_Current;
 
     dispseg();
+    if(dispmode == DISPWATT){
+      if(output) PIN_toggle(CVCC);
+      else{
+        dispmode = DISPVOLTAGE;
+        PIN_low(CVCC);
+      }
+    }
     count ++;
     if(count > MAXCOUNT){
       count = 0;
@@ -761,16 +772,27 @@ void ppsmode(){
       sum_Voltage = 0;
       sum_Current = 0;
       if(output){
-        if(dispV){
-          setseg(Voltage, false);
-        }else{
-          setseg(Current, false);
+        switch(dispmode){
+          case DISPVOLTAGE:
+            setseg(Voltage, false);
+            break;
+          case DISPCURRENT:
+            setseg(Current, false);
+            break;
+          case DISPWATT:
+            setseg(Voltage * Current / 1000, false);
+            break;
         }
       }else{
-        if(dispV){
-          setseg(set_Voltage ,true);
-        }else{
-          setseg(set_Current ,true);
+        switch(dispmode){
+          case DISPWATT:
+            dispmode = DISPVOLTAGE;
+          case DISPVOLTAGE:
+            setseg(set_Voltage ,true);
+            break;
+          case DISPCURRENT:
+            setseg(set_Current ,true);
+            break;
         }
       }
       if(countkeep == KEEPTIME){
@@ -788,7 +810,7 @@ void ppsmode(){
       case 255: //under processing
         break;
       case BUTTON_DOWN:
-        if(dispV && set_Voltage > min_Voltage){
+        if(dispmode == DISPVOLTAGE && set_Voltage > min_Voltage){
           set_Voltage -= 100;
           if(!PD_setVoltage(set_Voltage)){
             outvolt = true;
@@ -798,7 +820,7 @@ void ppsmode(){
         }
         break;
       case BUTTON_DOWN*10: //long pressing
-        if(dispV && countflag && set_Voltage > min_Voltage){
+        if(dispmode == DISPVOLTAGE && countflag && set_Voltage > min_Voltage){
           set_Voltage -= 100;
           countflag = false;
         }
@@ -812,7 +834,7 @@ void ppsmode(){
         }
         break;
       case BUTTON_UP:
-        if(dispV && set_Voltage < max_Voltage){
+        if(dispmode == DISPVOLTAGE && set_Voltage < max_Voltage){
           set_Voltage += 100;
           if(!PD_setVoltage(set_Voltage)){
             outvolt = true;
@@ -822,7 +844,7 @@ void ppsmode(){
         }
         break;
       case BUTTON_UP*10: //long pressing
-        if(dispV && countflag && set_Voltage < max_Voltage){
+        if(dispmode == DISPVOLTAGE && countflag && set_Voltage < max_Voltage){
           set_Voltage += 100;
           countflag = false;
         }
@@ -836,8 +858,20 @@ void ppsmode(){
           }
         break;
       case BUTTON_CVCC:
-        dispV =! dispV;
-        PIN_toggle(CVCC);
+        switch(dispmode){
+          case DISPVOLTAGE:
+            dispmode = DISPCURRENT;
+            PIN_high(CVCC);
+            break;
+          case DISPWATT:
+          case DISPCURRENT:
+            dispmode = DISPVOLTAGE;
+            PIN_low(CVCC);
+            break;
+        }
+        break;
+      case BUTTON_CVCC*10:
+        if(output && dispmode < DISPWATT) dispmode = DISPWATT;
         break;
       case BUTTON_CVCC*10 + BUTTON_CVCC:
         break;
@@ -872,7 +906,7 @@ void fixmode(){
   uint16_t Voltage = 0;
   uint16_t Current = 0;
   uint8_t pdonum = 1;
-  bool dispV = true; //V or I
+  uint8_t dispmode = DISPVOLTAGE;
   bool output = false; //ON or OFF
   bool outvolt = false;
 
@@ -916,6 +950,13 @@ void fixmode(){
     sum_Current += mes_Current;
 
     dispseg();
+    if(dispmode == DISPWATT){
+      if(output) PIN_toggle(CVCC);
+      else{
+        dispmode = DISPVOLTAGE;
+        PIN_low(CVCC);
+      }
+    }
     count ++;
     if(count > MAXCOUNT){
       count = 0;
@@ -925,16 +966,27 @@ void fixmode(){
       sum_Voltage = 0;
       sum_Current = 0;
       if(output){
-        if(dispV){
-          setseg(Voltage, false);
-        }else{
-          setseg(Current, false);
+        switch(dispmode){
+          case DISPVOLTAGE:
+            setseg(Voltage, false);
+            break;
+          case DISPCURRENT:
+            setseg(Current, false);
+            break;
+          case DISPWATT:
+            setseg(Voltage * Current / 1000, false);
+            break;
         }
       }else{
-        if(dispV){
-          setseg(PD_getPDOVoltage(pdonum) ,true);
-        }else{
-          setseg(PD_getPDOMaxCurrent(pdonum) ,true);
+        switch(dispmode){
+          case DISPWATT:
+            dispmode = DISPVOLTAGE;
+          case DISPVOLTAGE:
+            setseg(PD_getPDOVoltage(pdonum) ,true);
+            break;
+          case DISPCURRENT:
+            setseg(PD_getPDOMaxCurrent(pdonum) ,true);
+            break;
         }
       }
       if(!outvolt){
@@ -974,8 +1026,20 @@ void fixmode(){
         }
         break;
       case BUTTON_CVCC:
-        dispV =! dispV;
-        PIN_toggle(CVCC);
+        switch(dispmode){
+          case DISPVOLTAGE:
+            dispmode = DISPCURRENT;
+            PIN_high(CVCC);
+            break;
+          case DISPWATT:
+          case DISPCURRENT:
+            dispmode = DISPVOLTAGE;
+            PIN_low(CVCC);
+            break;
+        }
+        break;
+      case BUTTON_CVCC*10:
+        if(output && dispmode < DISPWATT) dispmode = DISPWATT;
         break;
       case BUTTON_OP:
         #ifdef DEBUG
@@ -1006,7 +1070,7 @@ void fiveVmode(){
   uint16_t set_Voltage = 5000;
   uint16_t Voltage = 0;
   uint16_t Current = 0;
-  bool dispV = true; //V or I
+  uint8_t dispmode = DISPVOLTAGE;
   bool output = false; //OFF
   bool outvolt = false;
 
@@ -1043,7 +1107,13 @@ void fiveVmode(){
     sum_Current += mes_Current;
 
     dispseg();
-    count ++;
+    if(dispmode == DISPWATT){
+      if(output) PIN_toggle(CVCC);
+      else{
+        dispmode = DISPVOLTAGE;
+        PIN_low(CVCC);
+      }
+    }
     if(count > MAXCOUNT){
       count = 0;
       
@@ -1052,10 +1122,16 @@ void fiveVmode(){
       sum_Voltage = 0;
       sum_Current = 0;
       if(output){
-        if(dispV){
-          setseg(Voltage, false);
-        }else{
-          setseg(Current, false);
+        switch(dispmode){
+          case DISPVOLTAGE:
+            setseg(Voltage, false);
+            break;
+          case DISPCURRENT:
+            setseg(Current, false);
+            break;
+          case DISPWATT:
+            setseg(Voltage * Current / 1000, false);
+            break;
         }
       }else{
         seg_num[0] = 10; //" "
@@ -1081,8 +1157,20 @@ void fiveVmode(){
         #endif
         break;
       case BUTTON_CVCC:
-        dispV =! dispV;
-        PIN_toggle(CVCC);
+        switch(dispmode){
+          case DISPVOLTAGE:
+            dispmode = DISPCURRENT;
+            PIN_high(CVCC);
+            break;
+          case DISPWATT:
+          case DISPCURRENT:
+            dispmode = DISPVOLTAGE;
+            PIN_low(CVCC);
+            break;
+        }
+        break;
+      case BUTTON_CVCC*10:
+        if(dispmode < DISPWATT) dispmode = DISPWATT;
         break;
     }
   }
