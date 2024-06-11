@@ -1073,19 +1073,16 @@ void fiveVmode(){
   uint8_t dispmode = DISPVOLTAGE;
   bool output = false; //OFF
   bool outvolt = false;
-
-  //disp 5
-  seg_num[0] = 10; //" "
-  seg_num[1] = 5; //5
-  seg_num[2] = 10; //" "
-  do{
-    count = readbotton();
-    DLY_ms(1);
-    dispseg();
-  }while(count < BUTTON_DOWN || BUTTON_OP < count);
   
   PIN_output(CVCC);
   PIN_low(CVCC);
+
+  seg_num[0] = 10; //" "
+  seg_num[1] = 5; //5
+  seg_num[2] = 10; //" "
+  seg_digit = 0;
+
+  count = 0;
 
   while(1){
     ADC_input(V_ADC);
@@ -1114,6 +1111,7 @@ void fiveVmode(){
         PIN_low(CVCC);
       }
     }
+    count ++;
     if(count > MAXCOUNT){
       count = 0;
       
