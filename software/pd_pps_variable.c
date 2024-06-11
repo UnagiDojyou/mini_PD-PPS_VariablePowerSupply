@@ -53,6 +53,8 @@
 #define V_A_ADD USE_FLASH_ADD
 #define V_B_ADD (V_A_ADD + 0x4)
 #define I_A_ADD (V_B_ADD + 0x4)
+#define TRIGGER_ADD (I_A_ADD + 0x4)
+#define USE_FLASH_END TRIGGER_ADD
 
 #define FLASH_END 0x0800F7FF //end of main flash memory
 
@@ -67,6 +69,9 @@
 #define DISPVOLTAGE 0
 #define DISPCURRENT 1
 #define DISPWATT 2
+
+#define MAX_TRIGGER_V 21000 //21V
+#define MIN_TRIGGER_V 3300 //3.3V
 
 void disable_swd(void) {
   uint32_t temp = AFIO->PCFR1; //read reg
@@ -203,6 +208,30 @@ void segregisterset(uint8_t num){
       GPIOB->BSHR = 0b00000000000000000001000000000010;
       GPIOC->BSHR = 0b00000000000000000000000000001010;
       GPIOC->BSXR = 0b00000000000011010000000000000000;
+      break;
+    case 20: //T
+      GPIOA->BSHR = 0b00000000000000000000000000001111;
+      GPIOB->BSHR = 0b00000000000000000001000000000010;
+      GPIOC->BSHR = 0b00000000000010000000000000000010;
+      GPIOC->BSXR = 0b00000000000011010000000000000000;
+      break;
+    case 22: //R
+      GPIOA->BSHR = 0b00000000000001000000000000001011;
+      GPIOB->BSHR = 0b00000000000000000001000000000010;
+      GPIOC->BSHR = 0b00000000000010100000000000000000;
+      GPIOC->BSXR = 0b00000000000011010000000000000000;
+      break;
+    case 23: //G
+      GPIOA->BSHR = 0b00000000000000000000000000001111;
+      GPIOB->BSHR = 0b00000000000000100001000000000000;
+      GPIOC->BSHR = 0b00000000000000000000000000001010;
+      GPIOC->BSXR = 0b00000000000011000000000000000001;
+      break;
+    case 24: //D
+      GPIOA->BSHR = 0b00000000000000000000000000001111;
+      GPIOB->BSHR = 0b00000000000000000001000000000010;
+      GPIOC->BSHR = 0b00000000000010100000000000000000;
+      GPIOC->BSXR = 0b00000000000001000000000000001001;
       break;
     default:
       break;
@@ -351,7 +380,7 @@ uint8_t readbotton(){
   return 255;
 }
 
-uint8_t mode = 0; //0:5V, 1:Fix, 2:PPS, 3:Cal
+uint8_t mode = 0; //0:5V, 1:Fix, 2:PPS, 3:Cal, 4:trg 5:settrg
 bool ppsable = false;
 bool fixable = false;
 
@@ -403,7 +432,7 @@ void setmode(){
       }else{
         //cvcc
         PIN_low(SEG_A1);
-        setdefaultmode();
+        mode = 5; //trigger set
         return;
       }
     }
@@ -566,20 +595,26 @@ bool readcoeff(){
   return !(V_a == 0xFFFFFFFF || V_b == 0xFFFFFFFF || I_a == 0xFFFFFFFF || V_a == 0 || I_a == 0);
 }
 
+uint32_t triggervoltage = 0;
+bool readtrigger(){
+  triggervoltage = ReadFlash32(TRIGGER_ADD);
+  return (MIN_TRIGGER_V <= triggervoltage && triggervoltage <= MAX_TRIGGER_V);
+}
+
 bool writeceff(){
   if(V_a == 0 && V_b == 0 && I_a == 0){ //can't read flash
     return false;
   }
-  if(!(ReadFlash32(I_A_ADD + 0x4) == 0xFFFFFFFF)){ //check using
+  if(!(ReadFlash32(USE_FLASH_END + 0x4) == 0xFFFFFFFF)){ //check using
     return false;
   }
-  if(!(ReadFlash32(V_A_ADD - 0x4) == 0xFFFFFFFF)){ //check using
+  if(!(ReadFlash32(USE_FLASH_ADD - 0x4) == 0xFFFFFFFF)){ //check using
     return false;
   }
   if(!FastEraseFlash(USE_FLASH_ADD)){
     return false;
   }
-  uint32_t message[4] = {V_a, V_b, I_a,0xFFFFFFFF};
+  uint32_t message[4] = {V_a, V_b, I_a, triggervoltage};
   if(!FastWriteFlash16(USE_FLASH_ADD,message)){
     return false;
   }
@@ -591,6 +626,8 @@ void ppsmode();
 void fiveVmode();
 void fixmode();
 void calmode();
+void triggermode();
+void triggersetmode();
 
 // ===================================================================================
 // Main Function
@@ -632,6 +669,10 @@ int main(void) {
 
   setmode();
 
+  if(readtrigger() && mode != 5){
+    mode = 4; //tiger mode
+  }
+
   if(!readcoeff()){
     #ifndef DEBUG
     mode = 3;
@@ -660,6 +701,12 @@ int main(void) {
       while(1);
     case 3:
       calmode();
+      while(1);
+    case 4:
+      triggermode();
+      while(1);
+    case 5:
+      triggersetmode();
       while(1);
   }
 }
@@ -1278,3 +1325,268 @@ void calmode(){
   }
 }
 
+void triggermode(){
+  uint16_t count = 0;
+  uint16_t countkeep = 0;
+  uint8_t pdonum = 0;
+  int32_t mes_Voltage = 0;
+  uint16_t mes_Current = 0;
+  uint32_t sum_Voltage = 0;
+  uint32_t sum_Current = 0;
+  uint16_t Voltage = 0;
+  uint16_t Current = 0;
+  uint8_t dispmode = DISPVOLTAGE;
+  bool outvolt = false;
+
+  //select pdo
+  for(uint8_t i = 1; i <= PD_getPDONum(); i++) {
+    if(i <= PD_getFixedNum()){ //fix
+      if(PD_getPDOVoltage(i) == triggervoltage){
+        pdonum = i;
+        mode = 1;
+      }
+    }
+    else if(PD_getPDOMinVoltage(i) <= triggervoltage && triggervoltage <= PD_getPDOMaxVoltage(i)){ //pps
+      if(PD_getPDOMaxCurrent(pdonum) < PD_getPDOMaxCurrent(i)){ //select higher current pdo
+        pdonum = i;
+        mode = 2;
+      }
+    }
+  }
+
+  if(triggervoltage == 5000) mode = 0;
+
+  //Cannot supply triggervoltage
+  if(mode == 4){
+    while(1){
+      dispseg();
+      DLY_ms(1);
+    }
+  }
+
+  if(mode && !PD_setPDO(pdonum, triggervoltage)){
+    while(1){
+      dispseg();
+      DLY_ms(1);
+    }
+  }
+
+  PIN_output(CVCC);
+  PIN_low(CVCC);
+
+  #ifdef DEBUG
+  PIN_high(ONOFF);
+  #endif
+
+  while(1){
+    ADC_input(V_ADC);
+    mes_Voltage = (ADC_read() * V_a + V_b) / 1000;
+    if(mes_Voltage < 0) mes_Voltage = 0;
+    sum_Voltage += mes_Voltage;
+    #ifndef DEBUG
+    if(triggervoltage*0.9 >= mes_Voltage || mes_Voltage >= triggervoltage*1.1){ //stop over voltage
+      PIN_low(ONOFF);
+      outvolt = true;
+    }else if(!outvolt){
+      PIN_high(ONOFF);
+    }
+    #endif
+    DLY_ms(1);
+    ADC_input(I_ADC);
+    mes_Current = (uint32_t)ADC_read() * I_a / 1000;
+    sum_Current += mes_Current;
+
+    dispseg();
+    if(dispmode == DISPWATT){
+      PIN_toggle(CVCC);
+    }
+    count ++;
+    if(count > MAXCOUNT){
+      count = 0;
+      countkeep ++;
+      
+      Voltage = sum_Voltage / MAXCOUNT;
+      Current = sum_Current / MAXCOUNT;
+      sum_Voltage = 0;
+      sum_Current = 0;
+      switch(dispmode){
+        case DISPVOLTAGE:
+          setseg(Voltage, false);
+          break;
+        case DISPCURRENT:
+          setseg(Current, false);
+          break;
+        case DISPWATT:
+          setseg(Voltage * Current / 1000, false);
+          break;
+      }
+      if(mode == 2){
+        if(countkeep == KEEPTIME){
+          PD_setPDO(pdonum, triggervoltage+20);
+        }else if(countkeep >= (2 * KEEPTIME)){
+          PD_setPDO(pdonum, triggervoltage);
+          countkeep = 0;
+        }
+      }
+    }
+    switch(readbotton()){
+      case 0: //not pushed
+        break;
+      case 255: //under processing
+        break;
+      case BUTTON_CVCC:
+        switch(dispmode){
+          case DISPVOLTAGE:
+            dispmode = DISPCURRENT;
+            PIN_high(CVCC);
+            break;
+          case DISPWATT:
+          case DISPCURRENT:
+            dispmode = DISPVOLTAGE;
+            PIN_low(CVCC);
+            break;
+        }
+        break;
+      case BUTTON_CVCC*10:
+        if(dispmode < DISPWATT) dispmode = DISPWATT;
+        break;
+      default:
+        break;
+    }
+  } 
+}
+
+void triggersetmode(){
+  uint16_t count = 0;
+  bool countflag = false;
+  //disp FIX
+  seg_num[0] = 20; //T
+  seg_num[1] = 22; //R
+  seg_num[2] = 23; //G
+  do{
+    count = readbotton();
+    DLY_ms(1);
+    dispseg();
+  }while(count - 10 * (count / 10) == 0 || count == 255); //long press realse and short press
+  do{
+    count = readbotton();
+    DLY_ms(1);
+    dispseg();
+  }while(count < BUTTON_DOWN || BUTTON_OP < count);
+
+  //when triggervoltage is valid value, reset trigger mode.
+  if(MIN_TRIGGER_V <= triggervoltage && triggervoltage <= MAX_TRIGGER_V){
+    seg_num[0] = 24; //D
+    seg_num[1] = 19; //E
+    seg_num[2] = 18; //L
+    do{
+      count = readbotton();
+      DLY_ms(1);
+      dispseg();
+    }while(count < BUTTON_DOWN || BUTTON_OP < count);
+    triggervoltage = 0;
+    if(!writeceff()){
+      seg_num[0] = 10; //" "
+      seg_num[1] = 19; //E
+      seg_num[2] = 10; //" "
+      seg_digit = 0;
+      while(1){
+        dispseg();
+        DLY_ms(1);
+      }
+    }else{
+      //sucess
+      RST_now();
+    }
+  }
+  
+  seg_num[0] = 5; //S
+  seg_num[1] = 19; //E
+  seg_num[2] = 20; //T
+  do{
+    count = readbotton();
+    DLY_ms(1);
+    dispseg();
+  }while(count < BUTTON_DOWN || BUTTON_OP < count);
+
+  count = 0;
+  triggervoltage = 5000; //5V
+
+  PIN_output(CVCC);
+  PIN_low(CVCC);
+
+  while(1){
+    DLY_ms(1);
+    dispseg();
+    count ++;
+    if(count > MAXCOUNT){
+      count = 0;
+      countflag = true;
+      setseg(triggervoltage, true);
+    }
+
+    switch(readbotton()){
+      case 0: //not pushed
+        countflag = false;
+        break;
+      case 255: //under processing
+        break;
+      case BUTTON_DOWN:
+        if(triggervoltage > MIN_TRIGGER_V){
+          triggervoltage -= 100;
+        }
+        break;
+      case BUTTON_DOWN*10: //long pressing
+        if(countflag && triggervoltage > MIN_TRIGGER_V){
+          triggervoltage -= 100;
+          countflag = false;
+        }
+        break;
+      case BUTTON_DOWN*10+BUTTON_DOWN: //down botton relased
+        if(MIN_TRIGGER_V < triggervoltage) triggervoltage += 100;
+        break;
+      case BUTTON_UP:
+        if(triggervoltage < MAX_TRIGGER_V){
+          triggervoltage += 100;
+        }
+        break;
+      case BUTTON_UP*10: //long pressing
+        if(countflag && triggervoltage < MAX_TRIGGER_V){
+          triggervoltage += 100;
+          countflag = false;
+        }
+        break;
+      case BUTTON_UP*10+BUTTON_UP: //up botton relased
+        if(triggervoltage < MAX_TRIGGER_V) triggervoltage -= 100;
+        break;
+      case BUTTON_CVCC:
+        break;
+      case BUTTON_CVCC*10:
+        break;
+      case BUTTON_CVCC*10 + BUTTON_CVCC:
+        break;
+      case BUTTON_OP*10 + BUTTON_OP:
+        break;
+      case BUTTON_OP:
+        if(MIN_TRIGGER_V <= triggervoltage && triggervoltage <= MAX_TRIGGER_V){
+          if(!writeceff()){
+            seg_num[0] = 10; //" "
+            seg_num[1] = 19; //E
+            seg_num[2] = 10; //" "
+            seg_digit = 0;
+            while(1){
+              dispseg();
+              DLY_ms(1);
+            }
+          }else{
+            //sucess
+            RST_now();
+          }
+        }
+        break;
+      default:
+        break;
+    }
+  }
+
+}
