@@ -47,7 +47,7 @@
 #define MAXCOUNT 100
 #define LONGPUSH_SPEED 100 //supeed of long push down/up
 
-#define KEEPTIME 80 //Prevents the reset after about 10 seconds
+#define KEEPTIME 40 //Prevents the reset after about 10 seconds
 
 #define USE_FLASH_ADD 0x800BF00 //page192
 #define V_A_ADD USE_FLASH_ADD
@@ -844,9 +844,7 @@ void ppsmode(){
         }
       }
       if(countkeep == KEEPTIME){
-        PD_setVoltage(set_Voltage+20);
-      }else if(countkeep >= (2 * KEEPTIME)){
-        PD_setVoltage(set_Voltage);
+        PD_PDO_request();
         countkeep = 0;
       }
     }
@@ -1424,9 +1422,7 @@ void triggermode(){
       }
       if(mode == 2){
         if(countkeep == KEEPTIME){
-          PD_setPDO(pdonum, triggervoltage+20);
-        }else if(countkeep >= (2 * KEEPTIME)){
-          PD_setPDO(pdonum, triggervoltage);
+          PD_PDO_request();
           countkeep = 0;
         }
       }
