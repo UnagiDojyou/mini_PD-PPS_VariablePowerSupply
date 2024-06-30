@@ -1,6 +1,5 @@
 // ===================================================================================
-// PD-PPS VariablePowerSupply
-// firmware
+// mini PD-PPS VariablePowerSupply firmware
 // Author: Unagi Dojyou
 // based on https://github.com/wagiminator
 // License: http://creativecommons.org/licenses/by-sa/3.0/
@@ -867,6 +866,13 @@ void ppsmode(){
         break;
       case BUTTON_DOWN*10: //long pressing
         if(dispmode == DISPVOLTAGE && countflag && set_Voltage > min_Voltage){
+          if((PD_getVoltage() - set_Voltage) >= (set_Voltage * 0.1) || (PD_getVoltage() - set_Voltage) >= 1000){
+            if(!PD_setVoltage(set_Voltage)){
+              outvolt = true;
+            }else{
+              outvolt =false;
+            }
+          }
           set_Voltage -= 100;
           countflag = false;
         }
@@ -891,6 +897,13 @@ void ppsmode(){
         break;
       case BUTTON_UP*10: //long pressing
         if(dispmode == DISPVOLTAGE && countflag && set_Voltage < max_Voltage){
+          if((set_Voltage - PD_getVoltage()) >= (set_Voltage * 0.1) || (set_Voltage - PD_getVoltage()) >= 1000){
+            if(!PD_setVoltage(set_Voltage)){
+              outvolt = true;
+            }else{
+              outvolt =false;
+            }
+          }
           set_Voltage += 100;
           countflag = false;
         }
@@ -898,10 +911,10 @@ void ppsmode(){
       case BUTTON_UP*10+BUTTON_UP: //up button relased
         if(set_Voltage < max_Voltage) set_Voltage -= 100;
         if(!PD_setVoltage(set_Voltage)){
-            outvolt = true;
-          }else{
-            outvolt =false;
-          }
+          outvolt = true;
+        }else{
+          outvolt =false;
+        }
         break;
       case BUTTON_CVCC:
         switch(dispmode){
