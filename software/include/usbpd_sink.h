@@ -99,6 +99,7 @@ typedef struct {
   volatile uint8_t    SetPDONum;
   volatile uint8_t    LastSetPDONum;
   volatile uint16_t   SetVoltage;
+  volatile uint16_t   SetCurrent; //modified by unagidojyou
   volatile uint16_t   LastSetVoltage;
   volatile uint8_t    USBPD_READY;
   volatile uint8_t    SourceMessageID;
@@ -114,6 +115,8 @@ uint8_t  PD_connect(void);                      // Initialize PD and connect
 uint8_t  PD_negotiate(void);                    // Negotiate current settings
 uint8_t  PD_setVoltage(uint16_t voltage);       // Set specified voltage (in millivolts)
 
+uint8_t  PD_setPPS(uint16_t voltage,uint16_t current); // Set specified voltage and current (in millivolts and milliampere)
+
 uint8_t  PD_getPDONum(void);                    // Get total number of PDOs
 uint8_t  PD_getFixedNum(void);                  // Get number of fixed power PDOs
 uint8_t  PD_getPPSNum(void);                    // Get number of programmable power PDOs       
@@ -126,6 +129,8 @@ uint16_t PD_getPDOMaxCurrent(uint8_t pdonum);   // Get max current of specified 
 uint8_t  PD_getPDO(void);                       // Get active PDO
 uint16_t PD_getVoltage(void);                   // Get active voltage
 uint16_t PD_getCurrent(void);                   // Get active max current
+
+uint16_t PD_getsetCurrent(void);                // Get set Current
 
 uint8_t PD_setPDO(uint8_t pdonum, uint16_t voltage);  // Set specified PDO and voltage
 

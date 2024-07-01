@@ -87,6 +87,7 @@ uint16_t PD_getPDOMaxCurrent(uint8_t pdonum) {
 uint8_t PD_setPDO(uint8_t pdonum, uint16_t voltage) {
   PD_control.SetPDONum  = pdonum;
   PD_control.SetVoltage = voltage;
+  PD_control.SetCurrent = PD_control.PPSSourceCap[pdonum].Current; //modified by unagidojyou
   return PD_negotiate();
 }
 
@@ -110,6 +111,44 @@ uint8_t PD_setVoltage(uint16_t voltage) {
   return 0;
 }
 
+// ===================================================================================
+// add by unagidojyou
+// ===================================================================================
+// Set specified PDO and voltage; returns 0:failed, 1:success
+uint8_t PD_setPDOwithCurrent(uint8_t pdonum, uint16_t voltage ,uint16_t current) {
+  PD_control.SetPDONum  = pdonum;
+  PD_control.SetVoltage = voltage;
+  PD_control.SetCurrent = current;
+  return PD_negotiate();
+}
+
+// ===================================================================================
+// add by unagidojyou
+// ===================================================================================
+// Set specified voltage and current (in millivolts and milliampere) if available;
+// returns 0:failed, 1:success
+uint8_t PD_setPPS(uint16_t voltage,uint16_t current) {
+  uint8_t i;
+  uint8_t ppspos = PD_control.SourcePDONum - PD_control.SourcePPSNum;  //num of nonpps pod
+  for(i=0; i<PD_control.SourcePDONum; i++) { //non pps
+    if(i < ppspos) {
+      if(PD_control.FixedSourceCap[i].Voltage == voltage) {
+        return PD_setPDO(i + 1, voltage);
+      }
+    }
+    else { //pps
+      if((PD_control.PPSSourceCap[i-ppspos].MinVoltage <= voltage) &&
+         (PD_control.PPSSourceCap[i-ppspos].MaxVoltage >= voltage) &&
+         (PD_control.PPSSourceCap[i-ppspos].Current >= current) &&
+         (50 <= current)) { //check voltage and current
+        // PD_control.ReSendRequest = true; no effect
+        return PD_setPDOwithCurrent(i + 1, voltage, current);
+      }
+    }
+  }
+  return 0;
+}
+
 // Get active PDO
 uint8_t PD_getPDO(void) {
   return PD_control.SetPDONum;
@@ -118,6 +157,18 @@ uint8_t PD_getPDO(void) {
 // Get active voltage
 uint16_t PD_getVoltage(void) {
   return PD_control.SetVoltage;
+}
+
+// ===================================================================================
+// add by unagidojyou
+// ===================================================================================
+// Get set Current
+uint16_t PD_getsetCurrent(void) {
+  uint8_t pdonum = PD_control.SetPDONum;
+  uint8_t ppspos = PD_control.SourcePDONum - PD_control.SourcePPSNum;
+  if(pdonum <= ppspos)
+    return PD_control.FixedSourceCap[pdonum - 1].Current;
+  else return PD_control.SetCurrent;
 }
 
 // Get active max current
@@ -255,17 +306,25 @@ void PD_PDO_request(void) {
   mh.MessageHeader.SpecificationRevision = PD_control.PD_Version;
 
   if(pdoNum > (PD_control.SourcePDONum - PD_control.SourcePPSNum)) {
+    pdo.SinkPPSRDO.Reserved7_8 = 0u; // shall be set to zero
+    pdo.SinkPPSRDO.Reserved21 = 0u; // shall be set to zero
+    pdo.SinkPPSRDO.EPRModeCapable = 0u;
+    pdo.SinkPPSRDO.UnchunkedExtendedMessage = 0u;
+    pdo.SinkPPSRDO.CapabilityMismatch = 0u;
+    pdo.SinkPPSRDO.Rserved27 = 0u; // shall be set to zero
+
     pdo.SinkPPSRDO.ObjectPosition              = pdoNum;
     pdo.SinkPPSRDO.OutputVoltageIn20mVunits    = PD_control.SetVoltage / 20;
-    pdo.SinkPPSRDO.OperatingCurrentIn50mAunits = PD_SC_fixed[pdoNum+PD_control.SourcePPSNum-PD_control.SourcePDONum-1].Current/50;
+    //pdo.SinkPPSRDO.OperatingCurrentIn50mAunits = PD_SC_fixed[pdoNum+PD_control.SourcePPSNum-PD_control.SourcePDONum-1].Current/50;
+    pdo.SinkPPSRDO.OperatingCurrentIn50mAunits = PD_control.SetCurrent / 50; //modified by unagidojyou
     pdo.SinkPPSRDO.NoUSBSuspend                = 1u;
-    pdo.SinkPPSRDO.USBCommunicationsCapable    = 1u;
+    pdo.SinkPPSRDO.USBCommunicationsCapable    = 0u; //modified by unagidojyou
   }
   else {
     pdo.SinkFixedVariableRDO.ObjectPosition               = pdoNum;
     pdo.SinkFixedVariableRDO.MaxOperatingCurrent10mAunits = PD_SC_fixed[pdoNum-1].Current/10;
     pdo.SinkFixedVariableRDO.OperatingCurrentIn10mAunits  = PD_SC_fixed[pdoNum-1].Current/10;
-    pdo.SinkFixedVariableRDO.USBCommunicationsCapable     = 1u;
+    pdo.SinkFixedVariableRDO.USBCommunicationsCapable     = 0u; //modified by unagidojyou
     pdo.SinkFixedVariableRDO.NoUSBSuspend                 = 1u;
   }
 

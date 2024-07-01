@@ -61,8 +61,8 @@
 #define CALV2 18000 //calictaion at 18V
 #define CALA 3000 ////calictaion at 3A
 #define R3 0.1 //0.1Ω
-#define R8 47000 //47kΩ
-#define R9 7500 //7.5kΩ
+#define R8 12000 //12kΩ
+#define R9 1500 //1.5kΩ
 #define VDD 3000 //3V
 
 #define DISPVOLTAGE 0
@@ -71,6 +71,8 @@
 
 #define MAX_TRIGGER_V 21000 //21V
 #define MIN_TRIGGER_V 3300 //3.3V
+
+#define LIMIT_CURRENT 3500 //3.5A
 
 void disable_swd(void) {
   uint32_t temp = AFIO->PCFR1; //read reg
@@ -738,6 +740,7 @@ void ppsmode(){
       max_Voltage = PD_getPDOMaxVoltage(i);
       max_Current = PD_getPDOMaxCurrent(i);
       set_Current = max_Current;
+      min_Current = 100; //100mA
       pdonum = i;
     }
   }
@@ -786,7 +789,7 @@ void ppsmode(){
     if(mes_Voltage < 0) mes_Voltage = 0;
     sum_Voltage += mes_Voltage;
     #ifndef DEBUG
-    if(set_Voltage*0.9 >= mes_Voltage || mes_Voltage >= set_Voltage*1.1){ //stop over voltage
+    if(mes_Voltage >= set_Voltage*1.1){ //stop over voltage
       if(output){
         output = false;
         PIN_low(ONOFF);
@@ -798,6 +801,13 @@ void ppsmode(){
     ADC_input(I_ADC);
     mes_Current = (uint32_t)ADC_read() * I_a / 1000;
     sum_Current += mes_Current;
+    if(mes_Current > LIMIT_CURRENT){ //stop over current
+      if(output){
+        output = false;
+        PIN_low(ONOFF);
+        outvolt = true;
+      }
+    }
 
     dispseg();
     if(dispmode == DISPWATT){
@@ -855,19 +865,21 @@ void ppsmode(){
       case 255: //under processing
         break;
       case BUTTON_DOWN:
-        if(dispmode == DISPVOLTAGE && set_Voltage > min_Voltage){
+        if(dispmode == DISPVOLTAGE && set_Voltage >= (min_Voltage + 100)){
           set_Voltage -= 100;
-          if(!PD_setVoltage(set_Voltage)){
-            outvolt = true;
-          }else{
-            outvolt =false;
-          }
+        }else if(dispmode == DISPCURRENT && set_Current >= (min_Current + 100)){
+          set_Current -= 100;
+        }
+        if(!PD_setPPS(set_Voltage, set_Current)){
+          outvolt = true;
+        }else{
+          outvolt =false;
         }
         break;
       case BUTTON_DOWN*10: //long pressing
-        if(dispmode == DISPVOLTAGE && countflag && set_Voltage > min_Voltage){
+        if(dispmode == DISPVOLTAGE && countflag && set_Voltage >= (min_Voltage + 100)){
           if((PD_getVoltage() - set_Voltage) >= (set_Voltage * 0.1) || (PD_getVoltage() - set_Voltage) >= 1000){
-            if(!PD_setVoltage(set_Voltage)){
+            if(!PD_setPPS(set_Voltage, set_Current)){
               outvolt = true;
             }else{
               outvolt =false;
@@ -875,30 +887,36 @@ void ppsmode(){
           }
           set_Voltage -= 100;
           countflag = false;
+        }else if(dispmode == DISPCURRENT && countflag && set_Current >= (min_Current + 100)){
+          set_Current -= 100;
+          countflag = false;
         }
         break;
       case BUTTON_DOWN*10+BUTTON_DOWN: //down button relased
-        if(min_Voltage < set_Voltage) set_Voltage += 100;
-        if(!PD_setVoltage(set_Voltage)){
+        if(dispmode == DISPVOLTAGE && min_Voltage < set_Voltage) set_Voltage += 100;
+        if(dispmode == DISPCURRENT && min_Current < set_Current) set_Current += 100;
+        if(!PD_setPPS(set_Voltage, set_Current)){
           outvolt = true;
         }else{
           outvolt =false;
         }
         break;
       case BUTTON_UP:
-        if(dispmode == DISPVOLTAGE && set_Voltage < max_Voltage){
+        if(dispmode == DISPVOLTAGE && set_Voltage <= (max_Voltage - 100)){
           set_Voltage += 100;
-          if(!PD_setVoltage(set_Voltage)){
-            outvolt = true;
-          }else{
-            outvolt =false;
-          }
+        }else if(dispmode == DISPCURRENT && set_Current <= (max_Current - 100)){
+          set_Current += 100;
+        }
+        if(!PD_setPPS(set_Voltage, set_Current)){
+          outvolt = true;
+        }else{
+          outvolt =false;
         }
         break;
       case BUTTON_UP*10: //long pressing
-        if(dispmode == DISPVOLTAGE && countflag && set_Voltage < max_Voltage){
+        if(dispmode == DISPVOLTAGE && countflag && set_Voltage <= (max_Voltage - 100)){
           if((set_Voltage - PD_getVoltage()) >= (set_Voltage * 0.1) || (set_Voltage - PD_getVoltage()) >= 1000){
-            if(!PD_setVoltage(set_Voltage)){
+            if(!PD_setPPS(set_Voltage, set_Current)){
               outvolt = true;
             }else{
               outvolt =false;
@@ -906,11 +924,15 @@ void ppsmode(){
           }
           set_Voltage += 100;
           countflag = false;
+        }else if(dispmode == DISPCURRENT && countflag && set_Current <= (max_Current - 100)){
+          set_Current += 100;
+          countflag = false;
         }
         break;
       case BUTTON_UP*10+BUTTON_UP: //up button relased
-        if(set_Voltage < max_Voltage) set_Voltage -= 100;
-        if(!PD_setVoltage(set_Voltage)){
+        if(dispmode == DISPVOLTAGE && set_Voltage < max_Voltage) set_Voltage -= 100;
+        if(dispmode == DISPCURRENT && set_Current < max_Current) set_Current -= 100;
+        if(!PD_setPPS(set_Voltage, set_Current)){
           outvolt = true;
         }else{
           outvolt =false;
@@ -942,7 +964,7 @@ void ppsmode(){
         PIN_toggle(ONOFF);
         #endif
         #ifndef DEBUG
-        if(set_Voltage*0.9 < Voltage && Voltage < set_Voltage*1.1 && !outvolt){
+        if(Voltage < set_Voltage*1.1 && !outvolt){
           output =! output;
           PIN_toggle(ONOFF);
         }else{ //Voltage Error
@@ -1007,6 +1029,13 @@ void fixmode(){
     ADC_input(I_ADC);
     mes_Current = (uint32_t)ADC_read() * I_a / 1000;
     sum_Current += mes_Current;
+    if(mes_Current > LIMIT_CURRENT){ //stop over current
+      if(output){
+        output = false;
+        PIN_low(ONOFF);
+        outvolt = true;
+      }
+    }
 
     dispseg();
     if(dispmode == DISPWATT){
@@ -1162,6 +1191,13 @@ void fiveVmode(){
     ADC_input(I_ADC);
     mes_Current = (uint32_t)ADC_read() * I_a / 1000;
     sum_Current += mes_Current;
+    if(mes_Current > LIMIT_CURRENT){ //stop over current
+      if(output){
+        output = false;
+        PIN_low(ONOFF);
+        outvolt = true;
+      }
+    }
 
     dispseg();
     if(dispmode == DISPWATT){
@@ -1408,6 +1444,10 @@ void triggermode(){
     ADC_input(I_ADC);
     mes_Current = (uint32_t)ADC_read() * I_a / 1000;
     sum_Current += mes_Current;
+    if(mes_Current > LIMIT_CURRENT){ //stop over current
+      PIN_low(ONOFF);
+      outvolt = true;
+    }
 
     dispseg();
     if(dispmode == DISPWATT){
