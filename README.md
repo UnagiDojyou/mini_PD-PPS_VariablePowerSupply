@@ -1,11 +1,12 @@
 # mini PD-PPS VariablePowerSupply
 詳しくは[USB PD PPSを使用した小型可変電源「mini PD-PPS VariablePowerSupply」](https://unagidojyou.com/2024/06-08/mini_pd-pps_variablepowersupply/)  <p>
 Draw any(3.3~21) voltage you want using USB PD PPS.  
-* PPS mode : Can be set 3.3~21V in 0.1V increments
+* PPS mode : Can be set 3.3~21V in 0.1V,0.1A increments
 * Fix mode : If PPS is not supported, Fix mode(5,9,12,15,20V) can be used
-* Compact : only 1.5x4.5cm
+* Compact : only 22x48mm
 * Voltmeter
 * Ammeter
+* Power meter
 * Output ON/OFF
 
 # hardware

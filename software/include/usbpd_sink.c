@@ -1,5 +1,5 @@
 // ===================================================================================
-// USB PD SINK Handler for CH32X035                                           * v1.3 *
+// USB PD SINK Handler for CH32X035                                           * v1.5 *
 // ===================================================================================
 //
 // Reference:               https://github.com/openwch/ch32x035
@@ -31,6 +31,7 @@ void PD_update(void);
 // Negotiate current settings and wait until finished (return 1) or timeout (return 0)
 uint8_t PD_negotiate(void) {
   uint8_t counter = 255;
+  PD_control.LastSetVoltage = 0;
   PD_control.USBPD_READY = 0;
   while((!PD_control.USBPD_READY) && (--counter)) {
     DLY_ms(5);
@@ -130,8 +131,8 @@ uint8_t PD_setPDOwithCurrent(uint8_t pdonum, uint16_t voltage ,uint16_t current)
 uint8_t PD_setPPS(uint16_t voltage,uint16_t current) {
   uint8_t i;
   uint8_t ppspos = PD_control.SourcePDONum - PD_control.SourcePPSNum;  //num of nonpps pod
-  for(i=0; i<PD_control.SourcePDONum; i++) { //non pps
-    if(i < ppspos) {
+  for(i=0; i<PD_control.SourcePDONum; i++) {
+    if(i < ppspos) { //non pps
       if(PD_control.FixedSourceCap[i].Voltage == voltage) {
         return PD_setPDO(i + 1, voltage);
       }
@@ -306,25 +307,18 @@ void PD_PDO_request(void) {
   mh.MessageHeader.SpecificationRevision = PD_control.PD_Version;
 
   if(pdoNum > (PD_control.SourcePDONum - PD_control.SourcePPSNum)) {
-    pdo.SinkPPSRDO.Reserved7_8 = 0u; // shall be set to zero
-    pdo.SinkPPSRDO.Reserved21 = 0u; // shall be set to zero
-    pdo.SinkPPSRDO.EPRModeCapable = 0u;
-    pdo.SinkPPSRDO.UnchunkedExtendedMessage = 0u;
-    pdo.SinkPPSRDO.CapabilityMismatch = 0u;
-    pdo.SinkPPSRDO.Rserved27 = 0u; // shall be set to zero
-
     pdo.SinkPPSRDO.ObjectPosition              = pdoNum;
     pdo.SinkPPSRDO.OutputVoltageIn20mVunits    = PD_control.SetVoltage / 20;
-    //pdo.SinkPPSRDO.OperatingCurrentIn50mAunits = PD_SC_fixed[pdoNum+PD_control.SourcePPSNum-PD_control.SourcePDONum-1].Current/50;
+    //pdo.SinkPPSRDO.OperatingCurrentIn50mAunits = PD_SC_PPS[pdoNum+PD_control.SourcePPSNum-PD_control.SourcePDONum-1].Current/50;
     pdo.SinkPPSRDO.OperatingCurrentIn50mAunits = PD_control.SetCurrent / 50; //modified by unagidojyou
     pdo.SinkPPSRDO.NoUSBSuspend                = 1u;
-    pdo.SinkPPSRDO.USBCommunicationsCapable    = 0u; //modified by unagidojyou
+    pdo.SinkPPSRDO.USBCommunicationsCapable    = 1u;
   }
   else {
     pdo.SinkFixedVariableRDO.ObjectPosition               = pdoNum;
     pdo.SinkFixedVariableRDO.MaxOperatingCurrent10mAunits = PD_SC_fixed[pdoNum-1].Current/10;
     pdo.SinkFixedVariableRDO.OperatingCurrentIn10mAunits  = PD_SC_fixed[pdoNum-1].Current/10;
-    pdo.SinkFixedVariableRDO.USBCommunicationsCapable     = 0u; //modified by unagidojyou
+    pdo.SinkFixedVariableRDO.USBCommunicationsCapable     = 1u;
     pdo.SinkFixedVariableRDO.NoUSBSuspend                 = 1u;
   }
 
