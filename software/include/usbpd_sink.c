@@ -88,7 +88,7 @@ uint16_t PD_getPDOMaxCurrent(uint8_t pdonum) {
 uint8_t PD_setPDO(uint8_t pdonum, uint16_t voltage) {
   PD_control.SetPDONum  = pdonum;
   PD_control.SetVoltage = voltage;
-  PD_control.SetCurrent = PD_control.PPSSourceCap[pdonum].Current; //modified by unagidojyou
+  PD_control.SetCurrent = PD_getPDOMaxCurrent(pdonum); //modified by unagidojyou
   return PD_negotiate();
 }
 
@@ -131,20 +131,13 @@ uint8_t PD_setPDOwithCurrent(uint8_t pdonum, uint16_t voltage ,uint16_t current)
 uint8_t PD_setPPS(uint16_t voltage,uint16_t current) {
   uint8_t i;
   uint8_t ppspos = PD_control.SourcePDONum - PD_control.SourcePPSNum;  //num of nonpps pod
-  for(i=0; i<PD_control.SourcePDONum; i++) {
-    if(i < ppspos) { //non pps
-      if(PD_control.FixedSourceCap[i].Voltage == voltage) {
-        return PD_setPDO(i + 1, voltage);
-      }
-    }
-    else { //pps
-      if((PD_control.PPSSourceCap[i-ppspos].MinVoltage <= voltage) &&
-         (PD_control.PPSSourceCap[i-ppspos].MaxVoltage >= voltage) &&
-         (PD_control.PPSSourceCap[i-ppspos].Current >= current) &&
-         (50 <= current)) { //check voltage and current
-        // PD_control.ReSendRequest = true; no effect
-        return PD_setPDOwithCurrent(i + 1, voltage, current);
-      }
+  if(!PD_control.SourcePPSNum) return 0;
+  for(i=ppspos; i<PD_control.SourcePDONum; i++) {
+    if((PD_control.PPSSourceCap[i-ppspos].MinVoltage <= voltage) &&
+        (PD_control.PPSSourceCap[i-ppspos].MaxVoltage >= voltage) &&
+        (PD_control.PPSSourceCap[i-ppspos].Current >= current) &&
+        (50 <= current)) { //check voltage and current
+      return PD_setPDOwithCurrent(i + 1, voltage, current);
     }
   }
   return 0;
@@ -163,22 +156,9 @@ uint16_t PD_getVoltage(void) {
 // ===================================================================================
 // add by unagidojyou
 // ===================================================================================
-// Get set Current
-uint16_t PD_getsetCurrent(void) {
-  uint8_t pdonum = PD_control.SetPDONum;
-  uint8_t ppspos = PD_control.SourcePDONum - PD_control.SourcePPSNum;
-  if(pdonum <= ppspos)
-    return PD_control.FixedSourceCap[pdonum - 1].Current;
-  else return PD_control.SetCurrent;
-}
-
-// Get active max current
+// Get active Current
 uint16_t PD_getCurrent(void) {
-  uint8_t pdonum = PD_control.SetPDONum;
-  uint8_t ppspos = PD_control.SourcePDONum - PD_control.SourcePPSNum;
-  if(pdonum <= ppspos)
-    return PD_control.FixedSourceCap[pdonum - 1].Current;
-  else return PD_control.PPSSourceCap[pdonum - ppspos - 1].Current;
+  return PD_control.SetCurrent;
 }
 
 // Initialize PD registers and states, then connect
@@ -309,7 +289,6 @@ void PD_PDO_request(void) {
   if(pdoNum > (PD_control.SourcePDONum - PD_control.SourcePPSNum)) {
     pdo.SinkPPSRDO.ObjectPosition              = pdoNum;
     pdo.SinkPPSRDO.OutputVoltageIn20mVunits    = PD_control.SetVoltage / 20;
-    //pdo.SinkPPSRDO.OperatingCurrentIn50mAunits = PD_SC_PPS[pdoNum+PD_control.SourcePPSNum-PD_control.SourcePDONum-1].Current/50;
     pdo.SinkPPSRDO.OperatingCurrentIn50mAunits = PD_control.SetCurrent / 50; //modified by unagidojyou
     pdo.SinkPPSRDO.NoUSBSuspend                = 1u;
     pdo.SinkPPSRDO.USBCommunicationsCapable    = 1u;

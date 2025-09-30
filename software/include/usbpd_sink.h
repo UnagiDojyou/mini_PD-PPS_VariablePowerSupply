@@ -19,7 +19,7 @@
 //
 // PD_getPDO()              Get active PDO
 // PD_getVoltage()          Get active voltage
-// PD_getCurrent()          Get active max current
+// PD_getCurrent()          Get active current
 //
 // Reference:               https://github.com/openwch/ch32x035
 // 2023 by Stefan Wagner:   https://github.com/wagiminator
@@ -128,9 +128,7 @@ uint16_t PD_getPDOMaxCurrent(uint8_t pdonum);   // Get max current of specified 
 
 uint8_t  PD_getPDO(void);                       // Get active PDO
 uint16_t PD_getVoltage(void);                   // Get active voltage
-uint16_t PD_getCurrent(void);                   // Get active max current
-
-uint16_t PD_getsetCurrent(void);                // Get set Current
+uint16_t PD_getCurrent(void);                   // Get active Current
 
 uint8_t PD_setPDO(uint8_t pdonum, uint16_t voltage);  // Set specified PDO and voltage
 
