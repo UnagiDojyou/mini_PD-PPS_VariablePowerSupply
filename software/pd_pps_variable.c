@@ -1,5 +1,6 @@
 // ===================================================================================
 // mini PD-PPS VariablePowerSupply firmware
+#define VERSION 800 // 0.80
 // Author: Unagi Dojyou
 // based on https://github.com/wagiminator
 // License: http://creativecommons.org/licenses/by-sa/3.0/
@@ -89,6 +90,9 @@
 #define STEP_VOLTAGE_LONG_NEG 1000 // Send pps when this value changes while holding down the button
 #define STEP_CURRENT_LONG_NEG 500 // Send pps when this value changes while holding down the button
 
+// time out of triger menu
+#define TRIGGER_TIMEOUT 2000 // 2second
+
 // ===================================================================================
 // define
 // ===================================================================================
@@ -104,6 +108,8 @@
 #define MODE_CAL 3
 #define MODE_TRG 4
 #define MODE_SETTRG 5
+#define MODE_DELTRG 6
+#define MODE_VER 7
 
 // display mode
 #define DISPVOLTAGE 0
@@ -258,6 +264,11 @@ void segregisterset(uint8_t num) {
       GPIOA->BSHR = 0b00000000000000010000000000000010;
       GPIOB->BSHR = 0b00000100000000000000001111011000;
       GPIOC->BSHR = 0b00000000000010000000000000000001;
+      break;
+    case 25: // V
+      GPIOA->BSHR = 0b00000000000000000000000000000011;
+      GPIOB->BSHR = 0b00000110000000000000000111011000;
+      GPIOC->BSHR = 0b00000000000010010000000000000000;
       break;
     default:
       break;
@@ -712,12 +723,6 @@ void manage_disp(uint16_t disp_set_Voltage, uint16_t disp_set_Current) {
         PIN_high(CC);
         break;
     }
-  } else if (mode == MODE_5V) { // OFF (5V mode)
-    PIN_low(ONOFF);
-    seg_num[0] = 10; // " "
-    seg_num[1] = 5; // 5
-    seg_num[2] = 10; // " "
-    seg_digit = 0;
   } else { // OFF
     PIN_low(ONOFF);
     switch (dispmode) {
@@ -741,8 +746,7 @@ void manage_disp(uint16_t disp_set_Voltage, uint16_t disp_set_Current) {
 
 void ppsmode_setup();
 void ppsmode_loop();
-void fiveVmode_setup();
-void fiveVmode_loop();
+void fiveVmode();
 void fixmode_setup();
 void fixmode_loop();
 void calmode();
@@ -750,6 +754,9 @@ void triggermode_setup();
 void triggermode_loop();
 void triggersetmode_setup();
 void triggersetmode_loop();
+void triggerdelmode();
+void vermode();
+void mode_menu();
 
 // ===================================================================================
 // Main Function
@@ -772,9 +779,6 @@ int main(void) {
   PIN_output(SEG_OP);
   
   PIN_low(ONOFF);
-  seg_num[0] = 11; // -
-  seg_num[1] = 11; // -
-  seg_num[2] = 11; // -
 
   // Setup
   enable_OPA();
@@ -792,7 +796,7 @@ int main(void) {
 
   setmode();
 
-  if (readtrigger() && mode != MODE_SETTRG) {
+  if (readtrigger() && mode != MODE_SETTRG && mode != MODE_CAL) {
     mode = MODE_TRG;
   }
 
@@ -812,31 +816,144 @@ int main(void) {
   PIN_output(SEG_A2);
   PIN_output(SEG_A3);
 
-  // Loop
-  switch (mode) {
-    case MODE_5V:
-      fiveVmode_setup();
-      fiveVmode_loop();
-      while (1);
-    case MODE_FIX:
-      fixmode_setup();
-      fixmode_loop();
-      while (1);
-    case MODE_PPS:
-      ppsmode_setup();
-      ppsmode_loop();
-      while (1);
-    case MODE_CAL:
-      calmode();
-      while (1);
-    case MODE_TRG:
-      triggermode_setup();
-      triggermode_loop();
-      while (1);
-    case MODE_SETTRG:
-      triggersetmode_setup();
-      triggersetmode_loop();
-      while (1);
+  mode_menu();
+}
+
+// ===================================================================================
+// mode select
+// ===================================================================================
+#define MODE_LIST_MAX 2
+
+uint8_t mode_list[6][MODE_LIST_MAX + 1] = {{MODE_5V, MODE_SETTRG, UINT8_MAX}, // fiveVmode
+                                      {MODE_FIX, MODE_SETTRG, UINT8_MAX}, // fixmode
+                                      {MODE_PPS, MODE_FIX, MODE_SETTRG}, // ppsmode
+                                      {MODE_VER, MODE_CAL, UINT8_MAX}, // calmode
+                                      {MODE_TRG, MODE_DELTRG, UINT8_MAX}, // triggermode
+                                      {MODE_SETTRG, UINT8_MAX, UINT8_MAX}}; // settriger
+
+void mode_menu() {
+  uint8_t menu_num = 0;
+  bool notpushed = true; // Press any button to be false
+  count = 0;
+
+  while(1) {
+    dispseg();
+    DLY_ms(1);
+
+    // set disp
+    seg_digit = 0;
+    switch (mode_list[mode][menu_num]) {
+      case MODE_5V:
+        seg_num[0] = 10; // " "
+        seg_num[1] = 5; // 5
+        seg_num[2] = 10; // " "
+        break;
+      case MODE_FIX:
+        seg_num[0] = 12; // F
+        seg_num[1] = 13; // I
+        seg_num[2] = 14; // X
+        break;
+      case MODE_PPS:
+        seg_num[0] = 15; // P
+        seg_num[1] = 15; // P
+        seg_num[2] = 5; // S
+        break;
+      case MODE_CAL:
+        seg_num[0] = 16; // C
+        seg_num[1] = 17; // A
+        seg_num[2] = 18; // L
+        break;
+      case MODE_TRG:
+        seg_num[0] = 20; // T
+        seg_num[1] = 22; // R
+        seg_num[2] = 23; // G
+        break;
+      case MODE_SETTRG:
+        seg_num[0] = 20; // T
+        seg_num[1] = 22; // R
+        seg_num[2] = 23; // G
+        break;
+      case MODE_DELTRG:
+        seg_num[0] = 24; // D
+        seg_num[1] = 19; // E
+        seg_num[2] = 18; // L
+        break;
+      case MODE_VER:
+        seg_num[0] = 25; // V
+        seg_num[1] = 19; // E
+        seg_num[2] = 22; // R
+        break;
+    }
+
+    switch (readbutton()) {
+      case BUTTON_NON:
+        break;
+      case BUTTON_ANY:
+        break;
+      case BUTTON_DOWN_SHORT:
+        if (menu_num < MODE_LIST_MAX) {
+          if (mode_list[mode][menu_num + 1] < UINT8_MAX) menu_num++; // next index
+        }
+        notpushed = false;
+        break;
+      case BUTTON_UP_SHORT:
+        if (menu_num > 0) menu_num--; // previous index
+        break;
+      case BUTTON_CVCC_SHORT:
+        if (mode == MODE_CAL) notpushed = false;
+        break;
+      case BUTTON_OP_SHORT:
+        switch (mode_list[mode][menu_num]) {
+          case MODE_5V:
+            fiveVmode();
+            break;
+          case MODE_FIX:
+            fixmode_setup();
+            fixmode_loop();
+            break;
+          case MODE_PPS:
+            ppsmode_setup();
+            ppsmode_loop();
+            break;
+          case MODE_CAL:
+            calmode();
+            break;
+          case MODE_TRG:
+            triggermode_setup();
+            triggermode_loop();
+            mode = MODE_TRG;
+            break;
+          case MODE_SETTRG:
+            triggersetmode_setup();
+            triggersetmode_loop();
+            break;
+          case MODE_DELTRG:
+            triggerdelmode();
+            break;
+          case MODE_VER:
+            if (notpushed) { // Prevents detection when releasing out&cvcc button
+              notpushed = false;
+            } else {
+              vermode();
+            }
+            break;
+          default:
+            break;
+        }
+        break;
+      default:
+        break;
+    }
+
+    // trigger mode time out
+    if (mode == MODE_TRG && notpushed) {
+      count++;
+      if (count > TRIGGER_TIMEOUT) {
+        count = 0;
+        triggermode_setup();
+        triggermode_loop();
+      }
+    }
   }
 }
 
@@ -856,16 +973,6 @@ void ppsmode_setup() {
       pdonum = i;
     }
   }
-
-  // disp PPS
-  seg_num[0] = 15; // P
-  seg_num[1] = 15; // P
-  seg_num[2] = 5; // S
-  do {
-    count = readbutton();
-    DLY_ms(1);
-    dispseg();
-  } while (!BUTTON_IS_SHORT(count));
 
   // disp maxVoltage
   PIN_high(CV);
@@ -912,12 +1019,12 @@ void ppsmode_loop() {
   while (1) {
     mesureVA();
     manage_disp(temp_set_Voltage, temp_set_Current);
-    count ++;
+    count++;
 
     // Refresh disp
     if (count > MAXCOUNT) {
       count = 0;
-      countkeep ++;
+      countkeep++;
       countflag = true;
       
       Voltage = (uint32_t)(sum_Voltage / MAXCOUNT);
@@ -1074,16 +1181,6 @@ void fixmode_setup() {
   set_Voltage = PD_getPDOVoltage(pdonum);
   set_Current = PD_getPDOMaxCurrent(pdonum);
 
-  // disp FIX
-  seg_num[0] = 12; // F
-  seg_num[1] = 13; // I
-  seg_num[2] = 14; // X
-  do {
-    count = readbutton();
-    DLY_ms(1);
-    dispseg();
-  } while (!BUTTON_IS_SHORT(count));
-  
   // init
   count = 0;
   dispmode = DISPVOLTAGE;
@@ -1096,7 +1193,7 @@ void fixmode_loop() {
   while (1) {
     mesureVA();
     manage_disp(set_Voltage, set_Current);
-    count ++;
+    count++;
     if (count > MAXCOUNT) {
       count = 0;
       
@@ -1163,22 +1260,36 @@ void fixmode_loop() {
 // ===================================================================================
 // 5V mode
 // ===================================================================================
-void fiveVmode_setup() {
+void fiveVmode() {
   dispmode = DISPVOLTAGE;
   output = false;
 
   count = 0;
   set_Voltage = 5000;
   set_Current = LIMIT_FIVE_CURRENT;
+  
+  // check voltage and output
   invalid_voltage = false;
-}
+  sum_Voltage = 0;
+  sum_Current = 0;
+  mesureVA();
+  output = true;
+  if (!invalid_voltage) {
+    PIN_high(ONOFF);
+    output = true;
+  } else {
+    return;
+  }
+  Voltage = sum_Voltage;
+  Current = sum_Current;
+  sum_Voltage = 0;
+  sum_Current = 0;
 
-
-void fiveVmode_loop() {
   while (1) {
     mesureVA();
+    if (invalid_voltage) return;
     manage_disp(set_Voltage, set_Current);
-    count ++;
+    count++;
     if (count > MAXCOUNT) {
       count = 0;
       
@@ -1193,8 +1304,8 @@ void fiveVmode_loop() {
         if (output) {
           switch (dispmode) {
             case DISPWATT:
-            dispmode = DISPVOLTAGE;
-            break;
+              dispmode = DISPVOLTAGE;
+              break;
             case DISPVOLTAGE:
               dispmode = DISPCURRENT;
               break;
@@ -1208,10 +1319,11 @@ void fiveVmode_loop() {
         if (output && dispmode < DISPWATT) dispmode = DISPWATT;
         break;
       case BUTTON_OP_SHORT:
-        if (!invalid_voltage) {
-          output =! output;
-        }
-        break;
+        PIN_low(ONOFF);
+        output = false;
+        PIN_low(CC);
+        PIN_low(CV);
+        return;
       default:
         break;
     }
@@ -1228,16 +1340,6 @@ void calmode() {
   uint32_t aveV2 = 0;
   uint32_t aveA1 = 0;
   uint32_t aveA2 = 0;
-
-  // disp CAL
-  seg_num[0] = 16; // C
-  seg_num[1] = 17; // A
-  seg_num[2] = 18; // L
-  do {
-    count = readbutton();
-    DLY_ms(1);
-    dispseg();
-  } while (!BUTTON_IS_SHORT(count));
 
   // calivration 5.00V
   setseg(CALV1,false);
@@ -1352,6 +1454,10 @@ void calmode() {
 // ===================================================================================
 void triggermode_setup() {
   pdonum = 0; // No pdonum selected
+  
+  seg_num[0] = 11; // -
+  seg_num[1] = 11; // -
+  seg_num[2] = 11; // -
 
   // select pdo
   for (uint8_t i = 1; i <= PD_getPDONum(); i++) {
@@ -1440,7 +1546,7 @@ void triggermode_loop() {
   while (1) {
     mesureVA();
     manage_disp(set_Voltage, set_Current);
-    count ++;
+    count++;
 
     // Refresh disp
     if (count > MAXCOUNT) {
@@ -1452,7 +1558,7 @@ void triggermode_loop() {
       sum_Current = 0;
 
       if (mode == MODE_PPS) {
-        countkeep ++;
+        countkeep++;
         if (countkeep > KEEPTIME) {
           PD_PDO_request();
           countkeep = 0;
@@ -1491,43 +1597,7 @@ void triggermode_loop() {
 // ===================================================================================
 // trigger setup mode
 // ===================================================================================
-void triggersetmode_setup() {
-  // disp FIX
-  seg_num[0] = 20; // T
-  seg_num[1] = 22; // R
-  seg_num[2] = 23; // G
-  do {
-    count = readbutton();
-    DLY_ms(1);
-    dispseg();
-  } while (!BUTTON_IS_SHORT(count));
-
-  // when triggervoltage is valid value, reset trigger mode.
-  if (MIN_TRIGGER_V <= triggervoltage && triggervoltage <= MAX_TRIGGER_V) {
-    seg_num[0] = 24; // D
-    seg_num[1] = 19; // E
-    seg_num[2] = 18; // L
-    do {
-      count = readbutton();
-      DLY_ms(1);
-      dispseg();
-    } while (!BUTTON_IS_SHORT(count));
-    triggervoltage = 0;
-    if (!writeceff() || readtrigger()) {
-      seg_num[0] = 10; // " "
-      seg_num[1] = 19; // E
-      seg_num[2] = 10; // " "
-      seg_digit = 0;
-      while (1) {
-        dispseg();
-        DLY_ms(1);
-      }
-    } else {
-      // sucess
-      RST_now();
-    }
-  }
-  
+void triggersetmode_setup() {  
   seg_num[0] = 5; // S
   seg_num[1] = 19; // E
   seg_num[2] = 20; // T
@@ -1548,7 +1618,7 @@ void triggersetmode_loop() {
   while (1) {
     DLY_ms(1);
     dispseg();
-    count ++;
+    count++;
     if (count > MAXCOUNT) {
       count = 0;
       countflag = true;
@@ -1586,18 +1656,20 @@ void triggersetmode_loop() {
         break;
       case BUTTON_OP_SHORT:
         if (MIN_TRIGGER_V <= triggervoltage && triggervoltage <= MAX_TRIGGER_V) {
-          if (!writeceff() || !readtrigger()) {
-            seg_num[0] = 10; // " "
-            seg_num[1] = 19; // E
-            seg_num[2] = 10; // " "
-            seg_digit = 0;
-            while (1) {
-              dispseg();
-              DLY_ms(1);
+          if (writeceff()) {
+            DLY_ms(1);
+            if (readtrigger()) {
+              // sucess
+              RST_now();
             }
-          } else {
-            // sucess
-            RST_now();
+          }
+          seg_num[0] = 10; // " "
+          seg_num[1] = 19; // E
+          seg_num[2] = 10; // " "
+          seg_digit = 0;
+          while (1) {
+            dispseg();
+            DLY_ms(1);
           }
         }
         break;
@@ -1605,4 +1677,40 @@ void triggersetmode_loop() {
         break;
     }
   }
+}
+
+// ===================================================================================
+// trigger delete mode
+// ===================================================================================
+void triggerdelmode() {
+  if (MIN_TRIGGER_V <= triggervoltage && triggervoltage <= MAX_TRIGGER_V) {
+    triggervoltage = 0;
+    if (writeceff()) {
+      DLY_ms(1);
+      if (!readtrigger()) {
+        // sucess
+        RST_now();
+      }
+    }
+    seg_num[0] = 10; // " "
+    seg_num[1] = 19; // E
+    seg_num[2] = 10; // " "
+    seg_digit = 0;
+    while (1) {
+      dispseg();
+      DLY_ms(1);
+    }
+  }
+}
+
+// ===================================================================================
+// trigger delete mode
+// ===================================================================================
+void vermode() {
+  setseg(VERSION, false);
+  do {
+    count = readbutton();
+    DLY_ms(1);
+    dispseg();
+  } while (!BUTTON_IS_SHORT(count));
 }
