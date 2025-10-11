@@ -1,6 +1,6 @@
 // ===================================================================================
 // mini PD-PPS VariablePowerSupply firmware
-#define VERSION 900 // 0.90
+#define VERSION 910 // 0.91
 // Author: Unagi Dojyou
 // based on https://github.com/wagiminator
 // License: http://creativecommons.org/licenses/by-sa/3.0/
@@ -708,9 +708,27 @@ void mesureVA() {
   sum_Current += mes_Current;
 }
 
-void manage_disp(uint16_t disp_set_Voltage, uint16_t disp_set_Current) {
-  if (output && !invalid_voltage) { // ON
+void manage_onoff() {
+  if (mode == MODE_PPS) {
+    if (!PIN_read(ONOFF) && output && !invalid_voltage) { // OFF -> ON
+      PIN_high(ONOFF);
+      invalid_voltage = !PD_setPPS(set_Voltage, set_Current);
+    } else if (PIN_read(ONOFF) && !output) { // ON -> OFF
+      PIN_low(ONOFF);
+      invalid_voltage = !PD_setPPS(min_Voltage, set_Current);
+    }
+    if ((set_Voltage != PD_getVoltage() || set_Current != PD_getCurrent()) && output && !invalid_voltage) {
+      invalid_voltage = !PD_setPPS(set_Voltage, set_Current);
+    }
+  } else if (output && !invalid_voltage) {
     PIN_high(ONOFF);
+  } else {
+    PIN_low(ONOFF);
+  }
+}
+
+void manage_disp(uint16_t disp_set_Voltage, uint16_t disp_set_Current) {
+  if (output) { // ON
     switch (dispmode) {
       case DISPVOLTAGE:
         setseg(Voltage, false);
@@ -729,7 +747,6 @@ void manage_disp(uint16_t disp_set_Voltage, uint16_t disp_set_Current) {
         break;
     }
   } else { // OFF
-    PIN_low(ONOFF);
     switch (dispmode) {
       case DISPCURRENT:
         PIN_low(CV);
@@ -920,6 +937,7 @@ void mode_menu() {
             fiveVmode();
             break;
           case MODE_FIX:
+            mode = MODE_FIX;
             fixmode_setup();
             fixmode_loop();
             break;
@@ -936,10 +954,12 @@ void mode_menu() {
             mode = MODE_TRG;
             break;
           case MODE_SETTRG:
+            mode = MODE_SETTRG;
             triggersetmode_setup();
             triggersetmode_loop();
             break;
           case MODE_DELTRG:
+            mode = MODE_DELTRG;
             triggerdelmode();
             break;
           case MODE_VER:
@@ -1018,7 +1038,7 @@ void ppsmode_setup() {
   count = 0;
   dispmode = DISPVOLTAGE;
   output = false;
-  invalid_voltage = !PD_setPPS(set_Voltage, set_Current);
+  invalid_voltage = !PD_setPPS(min_Voltage, set_Current);
 }
 
 
@@ -1029,8 +1049,9 @@ void ppsmode_loop() {
   bool countflag = false;
 
   while (1) {
-    mesureVA();
+    manage_onoff();
     manage_disp(temp_set_Voltage, temp_set_Current);
+    mesureVA();
     count++;
 
     // Refresh disp
@@ -1058,41 +1079,35 @@ void ppsmode_loop() {
       case BUTTON_ANY: // under processing
         break;
       case BUTTON_DOWN_SHORT:
-        if (dispmode == DISPVOLTAGE) { // down voltage
+        if (dispmode == DISPVOLTAGE) { // decrease voltage
           set_Voltage -= STEP_VOLTAGE_SHORT;
           if (set_Voltage < min_Voltage) set_Voltage = min_Voltage;
           temp_set_Voltage = set_Voltage;
-          invalid_voltage = !PD_setPPS(set_Voltage, set_Current);
-        } else if (dispmode == DISPCURRENT) {  // decrease voltage
+        } else if (dispmode == DISPCURRENT) {  // decrease current
           set_Current -= STEP_CURRENT_SHORT;
           if (set_Current < min_Current) set_Current = min_Current;
           temp_set_Current = set_Current;
-          invalid_voltage = !PD_setPPS(set_Voltage, set_Current);
         }
         break;
       case BUTTON_DOWN_LONG_HOLD:
         if (dispmode == DISPVOLTAGE && countflag) {
           if ((set_Voltage - temp_set_Voltage) >= STEP_VOLTAGE_LONG_NEG) {
             set_Voltage = temp_set_Voltage;
-            invalid_voltage = !PD_setPPS(set_Voltage, set_Current);
           }
           temp_set_Voltage -= STEP_VOLTAGE_LONG;
           if (temp_set_Voltage < min_Voltage) {
             temp_set_Voltage = min_Voltage;
             set_Voltage = temp_set_Voltage;
-            invalid_voltage = !PD_setPPS(set_Voltage, set_Current);
           }
           countflag = false;
         } else if (dispmode == DISPCURRENT && countflag) {
           if ((set_Current - temp_set_Current) >= STEP_CURRENT_LONG_NEG) {
             set_Current = temp_set_Current;
-            invalid_voltage = !PD_setPPS(set_Voltage, set_Current);
           }
           temp_set_Current -= STEP_CURRENT_LONG;
           if (temp_set_Current < min_Current) {
             temp_set_Current = min_Current;
             set_Current = temp_set_Current;
-            invalid_voltage = !PD_setPPS(set_Voltage, set_Current);
           }
           countflag = false;
         }
@@ -1101,7 +1116,6 @@ void ppsmode_loop() {
         if (dispmode == DISPVOLTAGE || dispmode == DISPCURRENT) {
           set_Voltage = temp_set_Voltage;
           set_Current = temp_set_Current;
-          invalid_voltage = !PD_setPPS(set_Voltage, set_Current);
         }
         break;
       case BUTTON_UP_SHORT:
@@ -1109,37 +1123,31 @@ void ppsmode_loop() {
           set_Voltage += STEP_VOLTAGE_SHORT;
           if (set_Voltage > max_Voltage) set_Voltage = max_Voltage;
           temp_set_Voltage = set_Voltage;
-          invalid_voltage = !PD_setPPS(set_Voltage, set_Current);
         } else if (dispmode == DISPCURRENT) {
           set_Current += STEP_CURRENT_SHORT;
           if (set_Current > max_Current) set_Current = max_Current;
           temp_set_Current = set_Current;
-          invalid_voltage = !PD_setPPS(set_Voltage, set_Current);
         }
         break;
       case BUTTON_UP_LONG_HOLD:
         if (dispmode == DISPVOLTAGE && countflag) {
           if ((temp_set_Voltage - set_Voltage) >= STEP_VOLTAGE_LONG_NEG) {
             set_Voltage = temp_set_Voltage;
-            invalid_voltage = !PD_setPPS(set_Voltage, set_Current);
           }
           temp_set_Voltage += STEP_VOLTAGE_LONG;
           if (temp_set_Voltage > max_Voltage) {
             temp_set_Voltage = max_Voltage;
             set_Voltage = temp_set_Voltage;
-            invalid_voltage = !PD_setPPS(set_Voltage, set_Current);
           }
           countflag = false;
         } else if (dispmode == DISPCURRENT && countflag) {
           if ((temp_set_Current - set_Current) >= STEP_CURRENT_LONG_NEG) {
             set_Current = temp_set_Current;
-            invalid_voltage = !PD_setPPS(set_Voltage, set_Current);
           }
           temp_set_Current += STEP_CURRENT_LONG;
           if (temp_set_Current > max_Current) {
             temp_set_Current = max_Current;
             set_Current = temp_set_Current;
-            invalid_voltage = !PD_setPPS(set_Voltage, set_Current);
           }
           countflag = false;
         }
@@ -1148,7 +1156,6 @@ void ppsmode_loop() {
         if (dispmode == DISPVOLTAGE || dispmode == DISPCURRENT) {
           set_Voltage = temp_set_Voltage;
           set_Current = temp_set_Current;
-          invalid_voltage = !PD_setPPS(set_Voltage, set_Current);
         }
         break;
       case BUTTON_CVCC_SHORT:
@@ -1203,8 +1210,9 @@ void fixmode_setup() {
 
 void fixmode_loop() {
   while (1) {
-    mesureVA();
+    manage_onoff();
     manage_disp(set_Voltage, set_Current);
+    mesureVA();
     count++;
     if (count > MAXCOUNT) {
       count = 0;
@@ -1298,9 +1306,10 @@ void fiveVmode() {
   sum_Current = 0;
 
   while (1) {
+    manage_onoff();
+    manage_disp(set_Voltage, set_Current);
     mesureVA();
     if (invalid_voltage) return;
-    manage_disp(set_Voltage, set_Current);
     count++;
     if (count > MAXCOUNT) {
       count = 0;
@@ -1485,6 +1494,7 @@ void triggermode_setup() {
     (triggercurrent <= PD_getPDOMaxCurrent(i) || triggercurrent == UINT16_MAX)) { // pps
       if ((pdonum && PD_getPDOMaxCurrent(i) > PD_getPDOMaxCurrent(pdonum)) || !pdonum) { // select higher current pdo
         set_Voltage = triggervoltage;
+        min_Voltage = PD_getPDOMinVoltage(i);
         if (triggercurrent == UINT16_MAX) {
           set_Current = PD_getPDOMaxCurrent(i);
         } else {
@@ -1515,7 +1525,7 @@ void triggermode_setup() {
       }
       break;
     case MODE_PPS:
-      if (!PD_setPPS(set_Voltage, set_Current)) {
+      if (!PD_setPPS(min_Voltage, set_Current)) {
         while (1) {
           dispseg();
           DLY_ms(1);
@@ -1544,7 +1554,6 @@ void triggermode_setup() {
   mesureVA();
   output = true;
   if (!invalid_voltage) {
-    PIN_high(ONOFF);
     output = true;
   } else {
     while (1) {
@@ -1562,8 +1571,9 @@ void triggermode_loop() {
   uint16_t countkeep = 0;
 
   while (1) {
-    mesureVA();
+    manage_onoff();
     manage_disp(set_Voltage, set_Current);
+    mesureVA();
     count++;
 
     // Refresh disp
@@ -1720,6 +1730,7 @@ void triggersetmode_loop() {
           }
           seg_num[0] = 10; // " "
           seg_num[1] = 19; // E
+          seg_num[2] = 10; // " "
           seg_digit = 0;
           while (1) {
             dispseg();
