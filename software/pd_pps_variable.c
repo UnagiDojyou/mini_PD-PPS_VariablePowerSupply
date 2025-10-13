@@ -10,6 +10,10 @@
 #include <debug_serial.h>       // serial debug functions
 #include <gpio.h>               // GPIO functions
 #include <usbpd_sink.h>         // USB PD sink functions
+#include <flash_rom.h>          // flash rom functions
+
+#include "7seg_button.h"
+#include "pin_define.h"
 
 // ===================================================================================
 // configuration
@@ -17,34 +21,6 @@
 
 // if DEBUG is defined, calibration is disaled.
 // #define DEBUG
-
-// PIN assign
-#define V_ADC PB0
-#define I_ADC PA4
-#define I_IN PA7
-#define I_OPAN PB1
-#define ONOFF PA5
-#define CV PA2 // pull Down
-#define CC PA3 // pull Down
-#define B_BUTTON PC17
-#define BUTTON PB11
-
-#define SEG_A1 PB4
-#define SEG_A2 PB6
-#define SEG_A3 PB3
-
-#define SEG_A0 PC3 // SEG_A
-#define SEG_B PB7
-#define SEG_C PB9
-#define SEG_D PC0
-#define SEG_E PA1
-#define SEG_F PA0
-#define SEG_G PB8
-#define SEG_OP PB10
-
-// button count, setting
-#define LONGCOUNT 250 // time of recognized as a long press
-#define SHORTCOUNT 2 // time of recognized as a short press
 #define MAXCOUNT 200 // Proportional to the interval of voltage,ampar,watt update time
 #define LONGPUSH_SPEED 100 // supeed of long push down/up
 
@@ -60,7 +36,6 @@
 #define TRIGGER_V_ADD (I_B_ADD + 0x4)
 #define TRIGGER_A_ADD (TRIGGER_V_ADD + 0x4)
 #define USE_FLASH_END TRIGGER_A_ADD
-#define FLASH_END 0x0800F7FF // end of main flash memory
 
 // calibration setting
 #define CALV1 5000 // calibration at 5V
@@ -99,10 +74,6 @@
 // define
 // ===================================================================================
 
-#define bool _Bool
-#define false ((bool)+0)
-#define true ((bool)+1)
-
 // mode
 #define MODE_5V 0
 #define MODE_FIX 1
@@ -118,26 +89,6 @@
 #define DISPCURRENT 1
 #define DISPWATT 2
 
-// button
-#define BUTTON_DOWN_SHORT 1
-#define BUTTON_UP_SHORT 2
-#define BUTTON_CVCC_SHORT 3
-#define BUTTON_OP_SHORT 4
-#define BUTTON_DOWN_LONG_HOLD (BUTTON_DOWN_SHORT * 10)
-#define BUTTON_UP_LONG_HOLD (BUTTON_UP_SHORT * 10)
-#define BUTTON_CVCC_LONG_HOLD (BUTTON_CVCC_SHORT * 10)
-#define BUTTON_OP_LONG_HOLD (BUTTON_OP_SHORT * 10)
-#define BUTTON_DOWN_LONG_RELEASE (BUTTON_DOWN_SHORT * 10 + BUTTON_DOWN_SHORT)
-#define BUTTON_UP_LONG_RELEASE (BUTTON_UP_SHORT * 10 + BUTTON_UP_SHORT)
-#define BUTTON_CVCC_LONG_RELEASE (BUTTON_CVCC_SHORT * 10 + BUTTON_CVCC_SHORT)
-#define BUTTON_OP_LONG_RELEASE (BUTTON_OP_SHORT * 10 + BUTTON_OP_SHORT)
-#define BUTTON_ANY 255 // while count < BUTTON_*_SHORT
-#define BUTTON_NON 0 // any button isn't pushed
-#define BUTTON_LONG_HOLD(button_short_num) (button_short_num * 10)
-#define BUTTON_LONG_RELEASE(button_short_num) (button_short_num * 10 + button_short_num)
-#define BUTTON_IS_LONG_RELEASE(button_num) (button_num == BUTTON_DOWN_LONG_RELEASE || button_num == BUTTON_UP_LONG_RELEASE || button_num == BUTTON_CVCC_LONG_RELEASE || button_num == BUTTON_OP_LONG_RELEASE)
-#define BUTTON_IS_SHORT(button_num) (BUTTON_DOWN_SHORT <= button_num && button_num <= BUTTON_OP_SHORT)
-
 // OPA addr
 #define OPA_CTLR1_PSEL2_MASK 0x00180000
 
@@ -145,506 +96,7 @@
 // functions
 // ===================================================================================
 
-void segregisterset(uint8_t num) {
-  switch (num) {
-    case 0:
-      GPIOA->BSHR = 0b00000000000000000000000000000011; // set SEG_E, SEG_D
-      GPIOB->BSHR = 0b00000101000000000000001011011000; // reset SEG_OP, SEG_G. set SEG_C, SEG_B
-      GPIOC->BSHR = 0b00000000000000000000000000001001; // set SEG_A, SEG_D
-      break;
-    case 1:
-      GPIOA->BSHR = 0b00000000000000110000000000000000;
-      GPIOB->BSHR = 0b00000101000000000000001011011000;
-      GPIOC->BSHR = 0b00000000000010010000000000000000;
-      break;
-    case 2:
-      GPIOA->BSHR = 0b00000000000000010000000000000010;
-      GPIOB->BSHR = 0b00000110000000000000000111011000;
-      GPIOC->BSHR = 0b00000000000000000000000000001001;
-      break;
-    case 3:
-      GPIOA->BSHR = 0b00000000000000110000000000000000;
-      GPIOB->BSHR = 0b00000100000000000000001111011000;
-      GPIOC->BSHR = 0b00000000000000000000000000001001;
-      break;
-    case 4:
-      GPIOA->BSHR = 0b00000000000000100000000000000001;
-      GPIOB->BSHR = 0b00000100000000000000001111011000;
-      GPIOC->BSHR = 0b00000000000010010000000000000000;
-      break;
-    case 5:
-      GPIOA->BSHR = 0b00000000000000100000000000000001;
-      GPIOB->BSHR = 0b00000100100000000000001101011000;
-      GPIOC->BSHR = 0b00000000000000000000000000001001;
-      break;
-    case 6:
-      GPIOA->BSHR = 0b00000000000000000000000000000011;
-      GPIOB->BSHR = 0b00000100100000000000001101011000;
-      GPIOC->BSHR = 0b00000000000000000000000000001001;
-      break;
-    case 7:
-      GPIOA->BSHR = 0b00000000000000100000000000000001;
-      GPIOB->BSHR = 0b00000101000000000000001011011000;
-      GPIOC->BSHR = 0b00000000000000010000000000001000;
-      break;
-    case 8:
-      GPIOA->BSHR = 0b00000000000000000000000000000011;
-      GPIOB->BSHR = 0b00000100000000000000001111011000;
-      GPIOC->BSHR = 0b00000000000000000000000000001001;
-      break;
-    case 9:
-      GPIOA->BSHR = 0b00000000000000100000000000000001;
-      GPIOB->BSHR = 0b00000100000000000000001111011000;
-      GPIOC->BSHR = 0b00000000000000000000000000001001;
-      break;
-    case 10: // no display
-      GPIOA->BSHR = 0b00000000000000110000000000000000;
-      GPIOB->BSHR = 0b00000111100000000000000001011000;
-      GPIOC->BSHR = 0b00000000000010010000000000000000;
-      break;
-    case 11: // display "-"
-      GPIOA->BSHR = 0b00000000000000110000000000000000;
-      GPIOB->BSHR = 0b00000110100000000000000101011000;
-      GPIOC->BSHR = 0b00000000000010010000000000000000;
-      break;
-    case 12: // F
-      GPIOA->BSHR = 0b00000000000000000000000000000011;
-      GPIOB->BSHR = 0b00000110100000000000000101011000;
-      GPIOC->BSHR = 0b00000000000000010000000000001000;
-      break;
-    case 13: // I
-      GPIOA->BSHR = 0b00000000000000000000000000000011;
-      GPIOB->BSHR = 0b00000111100000000000000001011000;
-      GPIOC->BSHR = 0b00000000000010010000000000000000;
-      break;
-    case 14: // X
-      GPIOA->BSHR = 0b00000000000000000000000000000011;
-      GPIOB->BSHR = 0b00000100000000000000001111011000;
-      GPIOC->BSHR = 0b00000000000010010000000000000000;
-      break;
-    case 15: // P
-      GPIOA->BSHR = 0b00000000000000000000000000000011;
-      GPIOB->BSHR = 0b00000110000000000000000111011000;
-      GPIOC->BSHR = 0b00000000000000010000000000001000;
-      break;
-    case 16: // C
-      GPIOA->BSHR = 0b00000000000000000000000000000011;
-      GPIOB->BSHR = 0b00000111100000000000000001011000;
-      GPIOC->BSHR = 0b00000000000000000000000000001001;
-      break;
-    case 17: // A
-      GPIOA->BSHR = 0b00000000000000000000000000000011;
-      GPIOB->BSHR = 0b00000100000000000000001111011000;
-      GPIOC->BSHR = 0b00000000000000010000000000001000;
-      break;
-    case 18: // L
-      GPIOA->BSHR = 0b00000000000000000000000000000011;
-      GPIOB->BSHR = 0b00000111100000000000000001011000;
-      GPIOC->BSHR = 0b00000000000010000000000000000001;
-      break;
-    case 19: // E
-      GPIOA->BSHR = 0b00000000000000000000000000000011;
-      GPIOB->BSHR = 0b00000110100000000000000101011000;
-      GPIOC->BSHR = 0b00000000000000000000000000001001;
-      break;
-    case 20: // T
-      GPIOA->BSHR = 0b00000000000000000000000000000011;
-      GPIOB->BSHR = 0b00000110100000000000000101011000;
-      GPIOC->BSHR = 0b00000000000010000000000000000001;
-      break;
-    case 22: // R
-      GPIOA->BSHR = 0b00000000000000010000000000000010;
-      GPIOB->BSHR = 0b00000110100000000000000101011000;
-      GPIOC->BSHR = 0b00000000000010010000000000000000;
-      break;
-    case 23: // G
-      GPIOA->BSHR = 0b00000000000000000000000000000011;
-      GPIOB->BSHR = 0b00000101100000000000001001011000;
-      GPIOC->BSHR = 0b00000000000000000000000000001001;
-      break;
-    case 24: // D
-      GPIOA->BSHR = 0b00000000000000010000000000000010;
-      GPIOB->BSHR = 0b00000100000000000000001111011000;
-      GPIOC->BSHR = 0b00000000000010000000000000000001;
-      break;
-    case 25: // V
-      GPIOA->BSHR = 0b00000000000000000000000000000011;
-      GPIOB->BSHR = 0b00000110000000000000000111011000;
-      GPIOC->BSHR = 0b00000000000010010000000000000000;
-      break;
-    default:
-      break;
-  }
-}
-
-uint8_t seg_num[3]; // Left,Center,Right.
-uint8_t seg_digit = 0; // 0:none,1:Left,2:Center,3:Right
-// set numbers(0~999000m) to display on 7seg
-void setseg(uint32_t num,bool fix100m) {
-  uint16_t temp = 0;
-  if (num < 10000) {
-    seg_digit = 1;
-    temp = num / 10;
-  } else if (num < 100000) {
-    seg_digit = 2;
-    temp = num / 100;
-  } else {
-    seg_digit = 0;
-    temp = num / 1000;
-  }
-  if (!fix100m || num >= 10000) { // use all segs. Ex 10.2, 5.02
-    seg_num[0] = temp / 100;
-    seg_num[1] = (temp / 10) % 10;
-    seg_num[2] = temp % 10;
-  } else { // only use 2 segs. Ex 3.3, 9.9
-    seg_digit = 2;
-    seg_num[0] = 10; // empty
-    seg_num[1] = temp/100;
-    seg_num[2] = (temp / 10) % 10;
-  }
-}
-
-uint8_t seg_driving = SEG_A1;
-// 7seg driver
-void dispseg() {
-  switch (seg_driving) {
-    case SEG_A3: // now Right,next is Left
-      segregisterset(seg_num[0]);
-      PIN_low(SEG_A1);
-      if (seg_digit == 1) {
-        PIN_high(SEG_OP);
-      }
-      seg_driving = SEG_A1;
-      break;
-    case SEG_A1: // now Left,next is Center
-      segregisterset(seg_num[1]);
-      PIN_low(SEG_A2);
-      if (seg_digit == 2) {
-        PIN_high(SEG_OP);
-      }
-      seg_driving = SEG_A2;
-      break;
-    case SEG_A2: // now Center,next is Right
-      segregisterset(seg_num[2]);
-      PIN_low(SEG_A3);
-      if (seg_digit == 3) {
-        PIN_high(SEG_OP);
-      }
-      seg_driving = SEG_A3;
-      break;
-    default:
-      seg_driving = SEG_A1;
-      break;
-  }
-}
-
-uint8_t button_pushed = 0; // last pushed button. 0 = none
-uint8_t button_pushing = 0;
-uint16_t button_count = 0; // how long button is pressed
-// short push return Normal,long pushing return *10,release after long press retun *10+
-uint8_t readbutton() {
-  // read button
-  if (!PIN_read(BUTTON)) {
-    switch (seg_driving) {
-      case SEG_A1:
-        button_pushing = BUTTON_OP_SHORT;
-        break;
-      case SEG_A2:
-        button_pushing = BUTTON_CVCC_SHORT;
-        break;
-      case SEG_A3:
-        button_pushing = BUTTON_UP_SHORT;
-    }
-    button_count++;
-  } else if (PIN_read(B_BUTTON)) {
-    button_pushing = BUTTON_DOWN_SHORT;
-    button_count++;
-  } else if (button_pushing) {
-    if (button_pushing == BUTTON_OP_SHORT && seg_driving == SEG_A1) {
-      button_pushing = 0;
-      button_pushed = BUTTON_OP_SHORT;
-    } else if (button_pushing == BUTTON_CVCC_SHORT && seg_driving == SEG_A2) {
-      button_pushing = 0;
-      button_pushed = BUTTON_CVCC_SHORT;
-    } else if (button_pushing == BUTTON_UP_SHORT && seg_driving == SEG_A3) {
-      button_pushing = 0;
-      button_pushed = BUTTON_UP_SHORT;
-    } else if (button_pushing == BUTTON_DOWN_SHORT && !PIN_read(B_BUTTON)) {
-      button_pushing = 0;
-      button_pushed = BUTTON_DOWN_SHORT;
-    } else {
-      button_count++;
-    }
-  }
-
-  // reset and return
-  if (button_pushing && button_count > LONGCOUNT) {
-    return BUTTON_LONG_HOLD(button_pushing); // long pressing
-  } else if (!button_pushing && button_pushed) { // release
-    uint8_t temp;
-    if (button_count > LONGCOUNT) {
-      button_count = 0;
-      temp = button_pushed;
-      button_pushed = 0;
-      return BUTTON_LONG_RELEASE(temp); // release after long press
-    } else if (button_count > SHORTCOUNT) {
-      button_count = 0;
-      temp = button_pushed;
-      button_pushed = 0;
-      return temp; // short pressed
-    } else { // chattering
-    }
-  } else if (button_pushing) {
-    return BUTTON_ANY; // pushing some button
-  }
-  button_count = 0;
-  button_pushed = 0;
-  return 0; // not pushed
-}
-
-uint8_t mode = 0; // 0:5V, 1:Fix, 2:PPS, 3:Cal, 4:trg 5:settrg
-bool ppsable = false;
-bool fixable = false;
-
-void setdefaultmode() {
-  if (ppsable && fixable) {
-    mode = MODE_PPS;
-  } else if (fixable) {
-    mode = MODE_FIX;
-  } else {
-    mode = MODE_5V;
-  }
-}
-
-void setmode() {
-  PIN_input(SEG_A1);
-  PIN_input(SEG_A2);
-  PIN_input(SEG_A3);
-  if (PIN_read(B_BUTTON)) {
-    // Down button
-    // it must be download mode
-    setdefaultmode();
-    return;
-  } else {
-    PIN_output(SEG_A3);
-    PIN_low(SEG_A3);
-    DLY_ms(1);
-    if (!PIN_read(BUTTON)) {
-      // up
-      setdefaultmode();
-      return;
-    }
-    PIN_input(SEG_A3);
-    PIN_output(SEG_A2);
-    PIN_low(SEG_A2);
-    DLY_ms(1);
-    if (!PIN_read(BUTTON)) {
-      PIN_input(SEG_A2);
-      PIN_output(SEG_A1);
-      PIN_low(SEG_A1);
-      DLY_ms(1);
-      if (!PIN_read(BUTTON)) {
-        // CVCC and OP
-        mode = MODE_CAL;
-        return;
-      } else {
-        // cvcc
-        PIN_low(SEG_A1);
-        mode = MODE_SETTRG;
-        return;
-      }
-    }
-    PIN_input(SEG_A2);
-    PIN_output(SEG_A1);
-    PIN_low(SEG_A1);
-    DLY_ms(1);
-    if (!PIN_read(BUTTON) && fixable) { // fix mode
-      // op
-      mode = MODE_FIX;
-      return;
-    }
-  }
-  setdefaultmode();
-}
-
-bool UnlockFlash() {
-  FLASH->KEYR = FLASH_KEY1;
-  FLASH->KEYR = FLASH_KEY2;
-  uint32_t temp = FLASH->CTLR; // read FLASH_CTLR
-  return !(temp & FLASH_CTLR_LOCK);
-}
-
-bool FastUnlockFlash() {
-  FLASH->MODEKEYR = FLASH_KEY1;
-  FLASH->MODEKEYR = FLASH_KEY2;
-  uint32_t temp = FLASH->CTLR; // read FLASH_CTLR
-  return !(temp & FLASH_CTLR_FLOCK);
-}
-
-// when EOP is 1 return true,else return false
-bool WaitFlashBusy() {
-  uint32_t temp;
-  do {
-    temp = FLASH->STATR; // read FLASH_STATR
-  } while (temp & FLASH_STATR_BSY); // while(BSY==1)
-  if (!(temp & FLASH_STATR_EOP)) { // check EOP
-    FLASH->CTLR = 0; // reset CTLR
-    return false;
-  }
-  FLASH->STATR = temp; // reset EOP
-  return true;
-}
-
-// Erase Flash Page(256Byte). "address" is Page start address.
-bool FastEraseFlash(uint32_t address) {
-  // 1) check locks
-  uint32_t temp = FLASH->CTLR; // read FLASH_CTLR
-  if (temp & FLASH_CTLR_LOCK) { // check lock
-    if (!UnlockFlash()) {
-      return false;
-    }
-  }
-  // 2)
-  temp = FLASH->CTLR;
-  if (temp & FLASH_CTLR_FLOCK) { // check flock
-    if (!FastUnlockFlash()) {
-      return false;
-    }
-  }
-  // 3) check other operation
-  WaitFlashBusy();
-  // 4) set erase mode
-  FLASH->CTLR = FLASH_CTLR_FTER; // set FTER bit
-  // 5) set erase address
-  FLASH->ADDR = address;
-  // 6) start erasec
-  temp = FLASH->CTLR;
-  temp |= FLASH_CTLR_STRT; // set FTER STRT
-  FLASH->CTLR = temp; // write reg
-  // 7,8) wait erase
-  if (!WaitFlashBusy()) return false;
-  // 9) reset CTRL
-  FLASH->CTLR = 0;
-  return true;
-}
-
-// Write Flash only 32Byte. "message" must be uint32_t[8]. "address" is Page start address.
-bool FastWriteFlash32(uint32_t address,uint32_t *message) {
-  // check locks
-  uint32_t temp = FLASH->CTLR; // read FLASH_CTLR
-  if (temp & FLASH_CTLR_LOCK) {  // check lock
-    if (!UnlockFlash()) {
-      return false;
-    }
-  }
-  temp = FLASH->CTLR;
-  if (temp & FLASH_CTLR_FLOCK) { // check flock
-    if (!FastUnlockFlash()) {
-      return false;
-    }
-  }
-  // 3) check other operation
-  WaitFlashBusy();
-  // 4) set programming mode
-  FLASH->CTLR = FLASH_CTLR_FTPG; // set FTPG
-  // 15)
-  for (int i = 0;i < 16;i++) {
-    //5)
-    temp = FLASH->CTLR;
-    temp |= FLASH_CTLR_BUFRST; // set BUFRST
-    FLASH->CTLR = temp; // write reg
-    // 6) wait buffa reset
-    if (!WaitFlashBusy()) return false;
-    // 10)
-    for (int j = 0;j < 4;j++) {
-      // 7) writedata
-      if (i == 0) {
-        *(volatile uint32_t*)(address+(i * 0x10)+(j * 4)) = message[j];
-      } else if (i == 1) {
-        *(volatile uint32_t*)(address+(i * 0x10)+(j * 4)) = message[j + 4];
-      } else {
-        *(volatile uint32_t*)(address+(i * 0x10)+(j * 4)) = 0xFFFFFFFF;
-      }
-      // 8) BUFLOAD
-      temp = FLASH->CTLR;
-      temp |= FLASH_CTLR_BUFLOAD; // set BUFLOAD
-      FLASH->CTLR = temp; // write reg
-      // 9) wait BUFFLOAD
-      WaitFlashBusy();
-    }
-    // 11)
-    FLASH->ADDR = address;
-    // 12)
-    temp = FLASH->CTLR;
-    temp |= FLASH_CTLR_STRT;
-    FLASH->CTLR = temp;
-    // 13)
-    if (!WaitFlashBusy()) return false;
-  }
-  FLASH->CTLR = 0; // reset CTLR
-  return true;
-}
-
-
-// lock flash write
-void relockFlash() {
-  WaitFlashBusy();
-  uint32_t temp = 0x00008080;
-  FLASH->CTLR = temp;
-}
-
-// read flash
-uint32_t ReadFlash32(uint32_t address) {
-  if (FLASH_BASE <= address && address < FLASH_END) {
-    WaitFlashBusy();
-    return (*(volatile const uint32_t*)(address));
-  }
-  return 0;
-}
-
-uint32_t V_a = 0;
-int32_t V_b = 0;
-uint32_t I_a = 0;
-int32_t I_b = 0;
-bool readcoeff() {
-  V_a = ReadFlash32(V_A_ADD);
-  V_b = (int32_t)ReadFlash32(V_B_ADD);
-  I_a = ReadFlash32(I_A_ADD);
-  I_b = (int32_t)ReadFlash32(I_B_ADD);
-  return !(V_a == 0xFFFFFFFF || V_b == 0xFFFFFFFF || I_a == 0xFFFFFFFF || I_b == 0xFFFFFFFF || V_a == 0 || I_a == 0);
-}
-
-uint32_t triggervoltage = 0;
-uint32_t triggercurrent = 0;
-bool readtrigger() {
-  triggervoltage = ReadFlash32(TRIGGER_V_ADD);
-  triggercurrent = ReadFlash32(TRIGGER_A_ADD);
-  return (MIN_TRIGGER_V <= triggervoltage && triggervoltage <= MAX_TRIGGER_V && 
-  ((MIN_TRIGGER_A <= triggercurrent && triggercurrent <= MAX_TRIGGER_A) || triggercurrent == UINT16_MAX));
-}
-
-bool writeceff() {
-  if (V_a == 0 && V_b == 0 && I_a == 0) { // can't read flash
-    return false;
-  }
-  if (!(ReadFlash32(USE_FLASH_END + 0x4) == 0xFFFFFFFF)) { // check using
-    return false;
-  }
-  if (!(ReadFlash32(USE_FLASH_ADD - 0x4) == 0xFFFFFFFF)) { // check using
-    return false;
-  }
-  if (!FastEraseFlash(USE_FLASH_ADD)) {
-    return false;
-  }
-  uint32_t message[8] = {V_a, V_b, I_a, I_b, triggervoltage, triggercurrent, UINT32_MAX, UINT32_MAX};
-  if (!FastWriteFlash32(USE_FLASH_ADD, message)) {
-    return false;
-  }
-  relockFlash();
-  return true;
-}
-
-void enable_OPA() {
+void OPA_enable() {
   OPA->OPAKEY = OPA_KEY1; // OPA Unlock
   OPA->OPAKEY = OPA_KEY2; // OPA Unlock
   OPA->CTLR1 &= ~OPA_CTLR1_NSEL2_OFF; // unmask CTLR1_NSEL2
@@ -658,6 +110,13 @@ void enable_OPA() {
   OPA->CTLR1 |= OPA_CTLR1_OPA_LOCK; // OPA Lock
 }
 
+uint8_t mode = 0; // 0:5V, 1:Fix, 2:PPS, 3:Cal, 4:trg 5:settrg
+bool ppsable = false;
+bool fixable = false;
+uint32_t V_a = 0;
+int32_t V_b = 0;
+uint32_t I_a = 0;
+int32_t I_b = 0;
 int32_t mes_Voltage = 0;
 int32_t mes_Current = 0;
 uint32_t sum_Voltage = 0;
@@ -675,17 +134,116 @@ uint8_t dispmode = DISPVOLTAGE;
 bool invalid_voltage = true;
 bool output = false; // OFF
 uint16_t count = 0; // while counter
+uint32_t triggervoltage = 0;
+uint32_t triggercurrent = 0;
+
+void setdefaultmode() {
+  if (ppsable && fixable) {
+    mode = MODE_PPS;
+  } else if (fixable) {
+    mode = MODE_FIX;
+  } else {
+    mode = MODE_5V;
+  }
+}
+
+void setmode() {
+  PIN_input(PIN_SEG_A1);
+  PIN_input(PIN_SEG_A2);
+  PIN_input(PIN_SEG_A3);
+  if (PIN_read(PIN_BOOT_BUTTON)) {
+    // Down button
+    // it must be download mode
+    setdefaultmode();
+    return;
+  } else {
+    PIN_output(PIN_SEG_A3);
+    PIN_low(PIN_SEG_A3);
+    DLY_ms(1);
+    if (!PIN_read(PIN_BUTTON)) {
+      // up
+      setdefaultmode();
+      return;
+    }
+    PIN_input(PIN_SEG_A3);
+    PIN_output(PIN_SEG_A2);
+    PIN_low(PIN_SEG_A2);
+    DLY_ms(1);
+    if (!PIN_read(PIN_BUTTON)) {
+      PIN_input(PIN_SEG_A2);
+      PIN_output(PIN_SEG_A1);
+      PIN_low(PIN_SEG_A1);
+      DLY_ms(1);
+      if (!PIN_read(PIN_BUTTON)) {
+        // CVCC and OP
+        mode = MODE_CAL;
+        return;
+      } else {
+        // CVCC
+        PIN_low(PIN_SEG_A1);
+        mode = MODE_SETTRG;
+        return;
+      }
+    }
+    PIN_input(PIN_SEG_A2);
+    PIN_output(PIN_SEG_A1);
+    PIN_low(PIN_SEG_A1);
+    DLY_ms(1);
+    if (!PIN_read(PIN_BUTTON) && fixable) { // fix mode
+      // op
+      mode = MODE_FIX;
+      return;
+    }
+  }
+  setdefaultmode();
+}
+
+bool readcoeff() {
+  V_a = FLASH_read4Byte(V_A_ADD);
+  V_b = (int32_t)FLASH_read4Byte(V_B_ADD);
+  I_a = FLASH_read4Byte(I_A_ADD);
+  I_b = (int32_t)FLASH_read4Byte(I_B_ADD);
+  return !(V_a == 0xFFFFFFFF || V_b == 0xFFFFFFFF || I_a == 0xFFFFFFFF || I_b == 0xFFFFFFFF || V_a == 0 || I_a == 0);
+}
+
+bool readtrigger() {
+  triggervoltage = FLASH_read4Byte(TRIGGER_V_ADD);
+  triggercurrent = FLASH_read4Byte(TRIGGER_A_ADD);
+  return (MIN_TRIGGER_V <= triggervoltage && triggervoltage <= MAX_TRIGGER_V && 
+  ((MIN_TRIGGER_A <= triggercurrent && triggercurrent <= MAX_TRIGGER_A) || triggercurrent == UINT16_MAX));
+}
+
+bool writeceff() {
+  if (V_a == 0 && V_b == 0 && I_a == 0) { // can't read flash
+    return false;
+  }
+  if (!(FLASH_read4Byte(USE_FLASH_END + 0x4) == 0xFFFFFFFF)) { // check using
+    return false;
+  }
+  if (!(FLASH_read4Byte(USE_FLASH_ADD - 0x4) == 0xFFFFFFFF)) { // check using
+    return false;
+  }
+  if (!FLASH_erasePage(USE_FLASH_ADD)) {
+    return false;
+  }
+  uint32_t message[8] = {V_a, V_b, I_a, I_b, triggervoltage, triggercurrent, UINT32_MAX, UINT32_MAX};
+  if (!FLASH_write32Byte(USE_FLASH_ADD, message)) {
+    return false;
+  }
+  FLASH_relock();
+  return true;
+}
 
 // read ADC and check
 void mesureVA() {
   // measure Voltage and Current
-  ADC_input(V_ADC);
+  ADC_input(PIN_V_ADC);
   mes_Voltage = (ADC_read() * V_a) / 1000 + V_b / 1000;
   #ifndef DEBUG
   if (mes_Voltage >= set_Voltage + LIMIT_VOLTAGE) { // stop over voltage
     if (output) {
       output = false;
-      PIN_low(ONOFF);
+      PIN_low(PIN_ONOFF);
       invalid_voltage = true;
     }
   }
@@ -693,13 +251,13 @@ void mesureVA() {
   if (mes_Voltage < 0) mes_Voltage = 0;
   sum_Voltage += mes_Voltage;
   DLY_ms(1);
-  ADC_input(I_ADC);
+  ADC_input(PIN_I_ADC);
   mes_Current = (ADC_read() * I_a) / 1000 + I_b / 1000;
   #ifndef DEBUG
   if (mes_Current > set_Current + LIMIT_CURRENT) { // stop over current
     if (output) {
       output = false;
-      PIN_low(ONOFF);
+      PIN_low(PIN_ONOFF);
       invalid_voltage = true;
     }
   }
@@ -710,20 +268,20 @@ void mesureVA() {
 
 void manage_onoff() {
   if (mode == MODE_PPS) {
-    if (!PIN_read(ONOFF) && output && !invalid_voltage) { // OFF -> ON
-      PIN_high(ONOFF);
+    if (!PIN_read(PIN_ONOFF) && output && !invalid_voltage) { // OFF -> ON
+      PIN_high(PIN_ONOFF);
       invalid_voltage = !PD_setPPS(set_Voltage, set_Current);
-    } else if (PIN_read(ONOFF) && !output) { // ON -> OFF
-      PIN_low(ONOFF);
+    } else if (PIN_read(PIN_ONOFF) && !output) { // ON -> OFF
+      PIN_low(PIN_ONOFF);
       invalid_voltage = !PD_setPPS(min_Voltage, set_Current);
     }
     if ((set_Voltage != PD_getVoltage() || set_Current != PD_getCurrent()) && output && !invalid_voltage) {
       invalid_voltage = !PD_setPPS(set_Voltage, set_Current);
     }
   } else if (output && !invalid_voltage) {
-    PIN_high(ONOFF);
+    PIN_high(PIN_ONOFF);
   } else {
-    PIN_low(ONOFF);
+    PIN_low(PIN_ONOFF);
   }
 }
 
@@ -731,46 +289,43 @@ void manage_disp(uint16_t disp_set_Voltage, uint16_t disp_set_Current) {
   if (output) { // ON
     switch (dispmode) {
       case DISPVOLTAGE:
-        setseg(Voltage, false);
-        PIN_high(CV);
-        PIN_low(CC);
+        SEG_number(Voltage, false);
+        PIN_high(PIN_CV);
+        PIN_low(PIN_CC);
         break;
       case DISPCURRENT:
-        setseg(Current, false);
-        PIN_low(CV);
-        PIN_high(CC);
+        SEG_number(Current, false);
+        PIN_low(PIN_CV);
+        PIN_high(PIN_CC);
         break;
       case DISPWATT:
-        setseg(Voltage * Current / 1000, false);
-        PIN_high(CV);
-        PIN_high(CC);
+        SEG_number(Voltage * Current / 1000, false);
+        PIN_high(PIN_CV);
+        PIN_high(PIN_CC);
         break;
     }
   } else { // OFF
     switch (dispmode) {
       case DISPCURRENT:
-        PIN_low(CV);
-        PIN_high(CC);
+        PIN_low(PIN_CV);
+        PIN_high(PIN_CC);
         if (disp_set_Current == UINT16_MAX) {
-          seg_num[0] = 10; // " "
-          seg_num[1] = 11; // -
-          seg_num[2] = 10; // " "
-          seg_digit = 0;
+          SEG_setEach(SEG_NON, SEG_MINUS, SEG_NON, 0); // " - "
         } else {
-          setseg(disp_set_Current, true);
+          SEG_number(disp_set_Current, true);
         }
         break;
       case DISPWATT:
         dispmode = DISPVOLTAGE;
         // not need break
       case DISPVOLTAGE:
-        setseg(disp_set_Voltage, true);
-        PIN_high(CV);
-        PIN_low(CC);
+        SEG_number(disp_set_Voltage, true);
+        PIN_high(PIN_CV);
+        PIN_low(PIN_CC);
         break;
     }
   }
-  dispseg();
+  SEG_driver();
 }
 
 void ppsmode_setup();
@@ -792,25 +347,25 @@ void mode_menu();
 // ===================================================================================
 int main(void) {
   // Setup
-  PIN_output(ONOFF);
-  PIN_output(CV);
-  PIN_output(CC);
-  PIN_input_PD(B_BUTTON); // pull down
-  PIN_input_PU(BUTTON); // pull up
+  PIN_output(PIN_ONOFF);
+  PIN_output(PIN_CV);
+  PIN_output(PIN_CC);
+  PIN_input_PD(PIN_BOOT_BUTTON); // pull down
+  PIN_input_PU(PIN_BUTTON); // pull up
  
-  PIN_output(SEG_A0);
-  PIN_output(SEG_B);
-  PIN_output(SEG_C);
-  PIN_output(SEG_D);
-  PIN_output(SEG_E);
-  PIN_output(SEG_F);
-  PIN_output(SEG_G);
-  PIN_output(SEG_OP);
+  PIN_output(PIN_SEG_A0);
+  PIN_output(PIN_SEG_B);
+  PIN_output(PIN_SEG_C);
+  PIN_output(PIN_SEG_D);
+  PIN_output(PIN_SEG_E);
+  PIN_output(PIN_SEG_F);
+  PIN_output(PIN_SEG_G);
+  PIN_output(PIN_SEG_OP);
   
-  PIN_low(ONOFF);
+  PIN_low(PIN_ONOFF);
 
   // Setup
-  enable_OPA();
+  OPA_enable();
   ADC_init(); // init ADC
   ADC_slow();
 
@@ -841,9 +396,9 @@ int main(void) {
     #endif
   }
   
-  PIN_output(SEG_A1);
-  PIN_output(SEG_A2);
-  PIN_output(SEG_A3);
+  PIN_output(PIN_SEG_A1);
+  PIN_output(PIN_SEG_A2);
+  PIN_output(PIN_SEG_A3);
 
   mode_menu();
 }
@@ -866,55 +421,38 @@ void mode_menu() {
   count = 0;
 
   while(1) {
-    dispseg();
+    SEG_driver();
     DLY_ms(1);
 
     // set disp
-    seg_digit = 0;
     switch (mode_list[mode][menu_num]) {
       case MODE_5V:
-        seg_num[0] = 10; // " "
-        seg_num[1] = 5; // 5
-        seg_num[2] = 10; // " "
+        SEG_setEach(SEG_NON, SEG_5, SEG_NON, 0); // " 5 "
         break;
       case MODE_FIX:
-        seg_num[0] = 12; // F
-        seg_num[1] = 13; // I
-        seg_num[2] = 14; // X
+        SEG_setEach(SEG_F, SEG_I, SEG_X, 0); // "FIX"
         break;
       case MODE_PPS:
-        seg_num[0] = 15; // P
-        seg_num[1] = 15; // P
-        seg_num[2] = 5; // S
+        SEG_setEach(SEG_P, SEG_P, SEG_S, 0); // "PPS"
         break;
       case MODE_CAL:
-        seg_num[0] = 16; // C
-        seg_num[1] = 17; // A
-        seg_num[2] = 18; // L
+        SEG_setEach(SEG_C, SEG_A, SEG_L, 0); // "CAL"
         break;
       case MODE_TRG:
-        seg_num[0] = 20; // T
-        seg_num[1] = 22; // R
-        seg_num[2] = 23; // G
+        SEG_setEach(SEG_T, SEG_R, SEG_G, 0); // "TRG"
         break;
       case MODE_SETTRG:
-        seg_num[0] = 20; // T
-        seg_num[1] = 22; // R
-        seg_num[2] = 23; // G
+        SEG_setEach(SEG_T, SEG_R, SEG_G, 0); // "TRG"
         break;
       case MODE_DELTRG:
-        seg_num[0] = 24; // D
-        seg_num[1] = 19; // E
-        seg_num[2] = 18; // L
+        SEG_setEach(SEG_D, SEG_E, SEG_L, 0); // "DEL"
         break;
       case MODE_VER:
-        seg_num[0] = 25; // V
-        seg_num[1] = 19; // E
-        seg_num[2] = 22; // R
+        SEG_setEach(SEG_V, SEG_E, SEG_R, 0); // "VER"
         break;
     }
 
-    switch (readbutton()) {
+    switch (BUTTON_read()) {
       case BUTTON_NON:
         break;
       case BUTTON_ANY:
@@ -1007,31 +545,31 @@ void ppsmode_setup() {
   }
 
   // disp maxVoltage
-  PIN_high(CV);
-  PIN_low(CC);
-  setseg(max_Voltage,true);
+  PIN_high(PIN_CV);
+  PIN_low(PIN_CC);
+  SEG_number(max_Voltage,true);
   do {
-    count = readbutton();
+    count = BUTTON_read();
     DLY_ms(1);
-    dispseg();
+    SEG_driver();
   } while (!BUTTON_IS_SHORT(count));
 
   // disp minVoltage
-  setseg(min_Voltage,true);
+  SEG_number(min_Voltage,true);
   do {
-    count = readbutton();
+    count = BUTTON_read();
     DLY_ms(1);
-    dispseg();
+    SEG_driver();
   } while (!BUTTON_IS_SHORT(count));
 
   // disp maxCurrent
-  PIN_low(CV);
-  PIN_high(CC);
-  setseg(max_Current,true);
+  PIN_low(PIN_CV);
+  PIN_high(PIN_CC);
+  SEG_number(max_Current,true);
   do {
-    count = readbutton();
+    count = BUTTON_read();
     DLY_ms(1);
-    dispseg();
+    SEG_driver();
   } while (!BUTTON_IS_SHORT(count));
 
   // init
@@ -1072,7 +610,7 @@ void ppsmode_loop() {
     }
 
     // button
-    switch (readbutton()) {
+    switch (BUTTON_read()) {
       case BUTTON_NON: // not pushed
         countflag = false;
         break;
@@ -1223,7 +761,7 @@ void fixmode_loop() {
       sum_Current = 0;
     }
 
-    switch (readbutton()) {
+    switch (BUTTON_read()) {
       case BUTTON_NON:
         break;
       case BUTTON_ANY:
@@ -1231,7 +769,7 @@ void fixmode_loop() {
       case BUTTON_DOWN_SHORT:
         if (output) {
           output = false;
-          PIN_low(ONOFF);
+          PIN_low(PIN_ONOFF);
         } else if (pdonum > 1) {
           pdonum--;
           set_Voltage = PD_getPDOVoltage(pdonum);
@@ -1242,7 +780,7 @@ void fixmode_loop() {
       case BUTTON_UP_SHORT:
         if (output) {
           output = false;
-          PIN_low(ONOFF);
+          PIN_low(PIN_ONOFF);
         } else if (pdonum < PD_getFixedNum()) {
           pdonum++;
           set_Voltage = PD_getPDOVoltage(pdonum);
@@ -1295,7 +833,7 @@ void fiveVmode() {
   mesureVA();
   output = true;
   if (!invalid_voltage) {
-    PIN_high(ONOFF);
+    PIN_high(PIN_ONOFF);
     output = true;
   } else {
     return;
@@ -1320,7 +858,7 @@ void fiveVmode() {
       sum_Current = 0;
     }
 
-    switch (readbutton()) {
+    switch (BUTTON_read()) {
       case BUTTON_CVCC_SHORT:
         if (output) {
           switch (dispmode) {
@@ -1340,10 +878,10 @@ void fiveVmode() {
         if (output && dispmode < DISPWATT) dispmode = DISPWATT;
         break;
       case BUTTON_OP_SHORT:
-        PIN_low(ONOFF);
+        PIN_low(PIN_ONOFF);
         output = false;
-        PIN_low(CC);
-        PIN_low(CV);
+        PIN_low(PIN_CC);
+        PIN_low(PIN_CV);
         return;
       default:
         break;
@@ -1363,72 +901,72 @@ void calmode() {
   uint32_t aveA2 = 0;
 
   // calivration 5.00V
-  setseg(CALV1,false);
-  PIN_high(CV);
-  PIN_low(CC);
-  PIN_high(ONOFF);
+  SEG_number(CALV1,false);
+  PIN_high(PIN_CV);
+  PIN_low(PIN_CC);
+  PIN_high(PIN_ONOFF);
   do {
-    count = readbutton();
+    count = BUTTON_read();
     DLY_ms(1);
-    dispseg();
+    SEG_driver();
   } while (!BUTTON_IS_SHORT(count));
   sum = 0;
   for (int i = 0; i < MAXCOUNT; i++) {
-    ADC_input(V_ADC);
+    ADC_input(PIN_V_ADC);
     DLY_ms(1);
     sum += ADC_read();
   }
   aveV1 = (100 * sum) / MAXCOUNT;
 
   // calivration 18.00V
-  setseg(CALV2,false);
-  PIN_high(CV);
-  PIN_low(CC);
-  PIN_high(ONOFF);
+  SEG_number(CALV2,false);
+  PIN_high(PIN_CV);
+  PIN_low(PIN_CC);
+  PIN_high(PIN_ONOFF);
   do {
-    count = readbutton();
+    count = BUTTON_read();
     DLY_ms(1);
-    dispseg();
+    SEG_driver();
   } while (!BUTTON_IS_SHORT(count));
   sum = 0;
   for (int i = 0; i < MAXCOUNT; i++) {
-    ADC_input(V_ADC);
+    ADC_input(PIN_V_ADC);
     DLY_ms(1);
     sum += ADC_read();
   }
   aveV2 = (sum / MAXCOUNT) * 100;
 
   // calivration 0.00A
-  PIN_low(ONOFF);
-  setseg(CALA1,false);
-  PIN_low(CV);
-  PIN_high(CC);
+  PIN_low(PIN_ONOFF);
+  SEG_number(CALA1,false);
+  PIN_low(PIN_CV);
+  PIN_high(PIN_CC);
   sum = 0;
   for (int i = 0; i < MAXCOUNT; i++) { // automatically done
-    ADC_input(I_ADC);
+    ADC_input(PIN_I_ADC);
     DLY_ms(1);
     sum += ADC_read();
   }
   aveA1 = (100 * sum) / MAXCOUNT;
 
   // calivration 3.00A
-  setseg(CALA2,false);
-  PIN_low(CV);
-  PIN_high(CC);
-  PIN_high(ONOFF);
+  SEG_number(CALA2,false);
+  PIN_low(PIN_CV);
+  PIN_high(PIN_CC);
+  PIN_high(PIN_ONOFF);
   do {
-    count = readbutton();
+    count = BUTTON_read();
     DLY_ms(1);
-    dispseg();
+    SEG_driver();
   } while (!BUTTON_IS_SHORT(count));
   sum = 0;
   for (int i = 0; i < MAXCOUNT; i++) {
-    ADC_input(I_ADC);
+    ADC_input(PIN_I_ADC);
     DLY_ms(1);
     sum += ADC_read();
   }
   aveA2 = (sum / MAXCOUNT) * 100;
-  PIN_low(ONOFF);
+  PIN_low(PIN_ONOFF);
 
   V_a = (1000 * 100 * (CALV2 - CALV1)) / (aveV2 - aveV1);
   V_b = 1000 * CALV2 - ((V_a * aveV2) / 100);
@@ -1436,22 +974,22 @@ void calmode() {
   I_b = 1000 * CALA1 - ((I_a * aveA1) / 100);
 
   // disp result
-  setseg(V_a,false);
-  PIN_high(CV);
-  PIN_low(CC);
+  SEG_number(V_a,false);
+  PIN_high(PIN_CV);
+  PIN_low(PIN_CC);
   do {
-    count = readbutton();
+    count = BUTTON_read();
     DLY_ms(1);
-    dispseg();
+    SEG_driver();
   } while (!BUTTON_IS_SHORT(count));
   
-  setseg(I_a,false);
-  PIN_high(CC);
-  PIN_low(CV);
+  SEG_number(I_a,false);
+  PIN_high(PIN_CC);
+  PIN_low(PIN_CV);
   do {
-    count = readbutton();
+    count = BUTTON_read();
     DLY_ms(1);
-    dispseg();
+    SEG_driver();
   } while (!BUTTON_IS_SHORT(count));
 
   if (writeceff()) {
@@ -1461,12 +999,9 @@ void calmode() {
       RST_now();
     }
   }
-  seg_num[0] = 10; // " "
-  seg_num[1] = 19; // E
-  seg_num[2] = 10; // " "
-  seg_digit = 0;
+  SEG_setEach(SEG_NON, SEG_E, SEG_NON, 0); // " E "
   while (1) {
-    dispseg();
+    SEG_driver();
     DLY_ms(1);
   }
 }
@@ -1477,9 +1012,7 @@ void calmode() {
 void triggermode_setup() {
   pdonum = 0; // No pdonum selected
   
-  seg_num[0] = 11; // -
-  seg_num[1] = 11; // -
-  seg_num[2] = 11; // -
+  SEG_setEach(SEG_MINUS, SEG_MINUS, SEG_MINUS, 0); // "---"
 
   // select pdo
   for (uint8_t i = 1; i <= PD_getPDONum(); i++) {
@@ -1519,7 +1052,7 @@ void triggermode_setup() {
     case MODE_FIX:
       if (!PD_setPDO(pdonum, set_Voltage)) {
         while (1) {
-          dispseg();
+          SEG_driver();
           DLY_ms(1);
         }
       }
@@ -1527,7 +1060,7 @@ void triggermode_setup() {
     case MODE_PPS:
       if (!PD_setPPS(min_Voltage, set_Current)) {
         while (1) {
-          dispseg();
+          SEG_driver();
           DLY_ms(1);
         }
       }
@@ -1536,7 +1069,7 @@ void triggermode_setup() {
       break;
     default: // Don't supply triggervoltage
       while (1) {
-        dispseg();
+        SEG_driver();
         DLY_ms(1);
       }
       break;
@@ -1557,7 +1090,7 @@ void triggermode_setup() {
     output = true;
   } else {
     while (1) {
-      dispseg();
+      SEG_driver();
       DLY_ms(1);
     }
   }
@@ -1595,7 +1128,7 @@ void triggermode_loop() {
     }
 
     // button
-    switch (readbutton()) {
+    switch (BUTTON_read()) {
       case BUTTON_NON:
         break;
       case BUTTON_ANY:
@@ -1626,13 +1159,11 @@ void triggermode_loop() {
 // trigger setup mode
 // ===================================================================================
 void triggersetmode_setup() {
-  seg_num[0] = 5; // S
-  seg_num[1] = 19; // E
-  seg_num[2] = 20; // T
+  SEG_setEach(SEG_S, SEG_E, SEG_T, 0); // "SET"
   do {
-    count = readbutton();
+    count = BUTTON_read();
     DLY_ms(1);
-    dispseg();
+    SEG_driver();
   } while (!BUTTON_IS_SHORT(count));
 
   // init
@@ -1656,7 +1187,7 @@ void triggersetmode_loop() {
     }
 
     // button
-    switch (readbutton()) {
+    switch (BUTTON_read()) {
       case BUTTON_NON:
         countflag = false;
         break;
@@ -1728,12 +1259,9 @@ void triggersetmode_loop() {
               RST_now();
             }
           }
-          seg_num[0] = 10; // " "
-          seg_num[1] = 19; // E
-          seg_num[2] = 10; // " "
-          seg_digit = 0;
+          SEG_setEach(SEG_NON ,SEG_E, SEG_NON, 0); // " E "
           while (1) {
-            dispseg();
+            SEG_driver();
             DLY_ms(1);
           }
         }
@@ -1758,12 +1286,9 @@ void triggerdelmode() {
         RST_now();
       }
     }
-    seg_num[0] = 10; // " "
-    seg_num[1] = 19; // E
-    seg_num[2] = 10; // " "
-    seg_digit = 0;
+    SEG_setEach(SEG_NON ,SEG_E, SEG_NON, 0); // " E "
     while (1) {
-      dispseg();
+      SEG_driver();
       DLY_ms(1);
     }
   }
@@ -1773,10 +1298,10 @@ void triggerdelmode() {
 // trigger delete mode
 // ===================================================================================
 void vermode() {
-  setseg(VERSION, false);
+  SEG_number(VERSION, false);
   do {
-    count = readbutton();
+    count = BUTTON_read();
     DLY_ms(1);
-    dispseg();
+    SEG_driver();
   } while (!BUTTON_IS_SHORT(count));
 }
