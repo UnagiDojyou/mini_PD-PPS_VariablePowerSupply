@@ -29,7 +29,7 @@ extern "C" {
 #define BUTTON_IS_SHORT(button_num) (BUTTON_DOWN_SHORT <= button_num && button_num <= BUTTON_OP_SHORT)
 
 #define BUTTON_LONGCOUNT 250 // time of recognized as a long press
-#define BUTTON_SHORTCOUNT 2 // time of recognized as a short press
+#define BUTTON_SHORTCOUNT 3 // time of recognized as a short press
 
 // 7seg pattern define
 #define SEG_0 0
@@ -60,7 +60,7 @@ extern "C" {
 #define SEG_V 24
 
 void SEG_setEach(uint8_t seg_left, uint8_t seg_center, uint8_t seg_right, uint8_t _seg_digit); // Set display content for each segment
-void SEG_number(uint32_t num, bool fix100m);
+void SEG_setNumber(uint32_t num, bool fix100m); // set numbers(0~999000m) to display on 7seg
 void SEG_driver();
 
 uint8_t BUTTON_read();
