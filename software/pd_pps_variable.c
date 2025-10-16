@@ -21,6 +21,12 @@
 
 // if DEBUG is defined, calibration is disaled.
 // #define DEBUG
+#define DEBUG_SHUNT_R 320 //10mΩ*32
+#define DEBUG_HIGH_R 10000 //10kΩ
+#define DEBUG_LOW_R 1000 //1kΩ
+#define DEBUG_VDD 3000 // 3V
+#define DEBUG_AMPOFFSET 550 // mA@0A
+
 #define MAXCOUNT 200 // Proportional to the interval of voltage,ampar,watt update time
 #define LONGPUSH_SPEED 100 // supeed of long push down/up
 
@@ -28,14 +34,14 @@
 #define KEEPTIME 40 // Prevents the reset after about 10 seconds
 
 // flash addr
-#define USE_FLASH_ADD 0x800BF00 // page192
-#define V_A_ADD USE_FLASH_ADD
-#define V_B_ADD (V_A_ADD + 0x4)
-#define I_A_ADD (V_B_ADD + 0x4)
-#define I_B_ADD (I_A_ADD + 0x4)
-#define TRIGGER_V_ADD (I_B_ADD + 0x4)
-#define TRIGGER_A_ADD (TRIGGER_V_ADD + 0x4)
-#define USE_FLASH_END TRIGGER_A_ADD
+#define FLASH_ADD_START 0x800BF00 // page192
+#define FLASH_ADD_V_A FLASH_ADD_START
+#define FLASH_ADD_V_B (FLASH_ADD_V_A + 0x4)
+#define FLASH_ADD_I_A (FLASH_ADD_V_B + 0x4)
+#define FLASH_ADD_I_B (FLASH_ADD_I_A + 0x4)
+#define FLASH_ADD_TRIGGER_V (FLASH_ADD_I_B + 0x4)
+#define FLASH_ADD_TRIGGER_A (FLASH_ADD_TRIGGER_V + 0x4)
+#define FLASH_ADD_END FLASH_ADD_TRIGGER_A
 
 // calibration setting
 #define CALV1 5000 // calibration at 5V
@@ -44,13 +50,14 @@
 #define CALA2 3000 // calibration at 3A
 
 // define PPS
-#define DEFAULT_PPS_VOLTAGE 5000 // 5V
-#define DEFAULT_FIX_VOLTAGE 5000 // 5V
-#define MAX_TRIGGER_V 21000 // 21V
-#define MIN_TRIGGER_V 3300 // 3.3V
-#define MAX_TRIGGER_A 3000 // 3A
-#define MIN_TRIGGER_A MIN_PPS_CURRENT
-#define MIN_PPS_CURRENT 500 // 500mA
+#define PPS_MIN_CURRENT 500 // 500mA
+#define PPS_MAX_CURRENT 5000 // 5A
+#define PPS_DEFAULT_VOLTAGE 5000 // 5V
+#define FIX_DEFAULT_VOLTAGE 5000 // 5V
+#define TRIGGER_MAX_VOLTAGE 21000 // 21V
+#define TRIGGER_MIN_VOLTAGE 3300 // 3.3V
+#define TRIGGER_MIN_CURRENT PPS_MIN_CURRENT
+#define TRIGGER_MAX_CURRENT 3000 // 3A
 
 // over current protection
 #define LIMIT_CURRENT 500 // set_current + 500mA
@@ -85,9 +92,9 @@
 #define MODE_VER 7
 
 // display mode
-#define DISPVOLTAGE 0
-#define DISPCURRENT 1
-#define DISPWATT 2
+#define DISP_VOLTAGE 0
+#define DISP_CURRENT 1
+#define DISP_WATT 2
 
 // OPA addr
 #define OPA_CTLR1_PSEL2_MASK 0x00180000
@@ -120,7 +127,7 @@ int32_t mes_Voltage = 0;
 int32_t mes_Current = 0;
 uint32_t sum_Voltage = 0;
 uint32_t sum_Current = 0;
-uint16_t set_Voltage = DEFAULT_PPS_VOLTAGE; // ~= PD_getVoltage
+uint16_t set_Voltage = PPS_DEFAULT_VOLTAGE; // ~= PD_getVoltage
 uint16_t set_Current = 0; // ~= PD_getCurrent
 uint16_t min_Voltage = 0;
 uint16_t max_Voltage = 0;
@@ -129,7 +136,7 @@ uint16_t max_Current = 0;
 uint32_t Voltage = 0;
 uint32_t Current = 0;
 uint8_t pdonum = 0;
-uint8_t dispmode = DISPVOLTAGE;
+uint8_t dispmode = DISP_VOLTAGE;
 bool invalid_voltage = true;
 bool output = false; // OFF
 uint16_t count = 0; // while counter
@@ -138,19 +145,19 @@ uint32_t trigger_current = 0;
 
 // Read the coefficients for voltage/current value
 bool readCoeff() {
-  coeffv_a = FLASH_read4Byte(V_A_ADD);
-  coeffv_b = (int32_t)FLASH_read4Byte(V_B_ADD);
-  coeffi_a = FLASH_read4Byte(I_A_ADD);
-  coeffi_b = (int32_t)FLASH_read4Byte(I_B_ADD);
+  coeffv_a = FLASH_read4Byte(FLASH_ADD_V_A);
+  coeffv_b = (int32_t)FLASH_read4Byte(FLASH_ADD_V_B);
+  coeffi_a = FLASH_read4Byte(FLASH_ADD_I_A);
+  coeffi_b = (int32_t)FLASH_read4Byte(FLASH_ADD_I_B);
   return !(coeffv_a == 0xFFFFFFFF || coeffv_b == 0xFFFFFFFF || coeffi_a == 0xFFFFFFFF || coeffi_b == 0xFFFFFFFF || coeffv_a == 0 || coeffi_a == 0);
 }
 
 // Read trigger voltage and current to judge trigger mode
 bool readTrigger() {
-  trigger_voltage = FLASH_read4Byte(TRIGGER_V_ADD);
-  trigger_current = FLASH_read4Byte(TRIGGER_A_ADD);
-  return (MIN_TRIGGER_V <= trigger_voltage && trigger_voltage <= MAX_TRIGGER_V && 
-  ((MIN_TRIGGER_A <= trigger_current && trigger_current <= MAX_TRIGGER_A) || trigger_current == UINT16_MAX));
+  trigger_voltage = FLASH_read4Byte(FLASH_ADD_TRIGGER_V);
+  trigger_current = FLASH_read4Byte(FLASH_ADD_TRIGGER_A);
+  return (TRIGGER_MIN_VOLTAGE <= trigger_voltage && trigger_voltage <= TRIGGER_MAX_VOLTAGE && 
+  ((TRIGGER_MIN_CURRENT <= trigger_current && trigger_current <= TRIGGER_MAX_CURRENT) || trigger_current == UINT16_MAX));
 }
 
 // write the coefficients for voltage/current value
@@ -158,17 +165,17 @@ bool writeCoeff() {
   if (coeffv_a == 0 && coeffv_b == 0 && coeffi_a == 0) { // can't read flash
     return false;
   }
-  if (!(FLASH_read4Byte(USE_FLASH_END + 0x4) == 0xFFFFFFFF)) { // check using
+  if (!(FLASH_read4Byte(FLASH_ADD_END + 0x4) == 0xFFFFFFFF)) { // check using
     return false;
   }
-  if (!(FLASH_read4Byte(USE_FLASH_ADD - 0x4) == 0xFFFFFFFF)) { // check using
+  if (!(FLASH_read4Byte(FLASH_ADD_START - 0x4) == 0xFFFFFFFF)) { // check using
     return false;
   }
-  if (!FLASH_erasePage(USE_FLASH_ADD)) {
+  if (!FLASH_erasePage(FLASH_ADD_START)) {
     return false;
   }
   uint32_t message[8] = {coeffv_a, coeffv_b, coeffi_a, coeffi_b, trigger_voltage, trigger_current, UINT32_MAX, UINT32_MAX};
-  if (!FLASH_write32Byte(USE_FLASH_ADD, message)) {
+  if (!FLASH_write32Byte(FLASH_ADD_START, message)) {
     return false;
   }
   FLASH_relock();
@@ -184,10 +191,10 @@ bool selectCalMode() {
     return true;
     #endif
     #ifdef DEBUG
-    coeffv_a = (VDD * (HIGH_R + LOW_R) / LOW_R) * 1000 / 4095;
+    coeffv_a = (DEBUG_VDD * (DEBUG_HIGH_R + DEBUG_LOW_R) / DEBUG_LOW_R) * 1000 / 4095;
     coeffv_b = 0;
-    coeffi_a = (1000 * VDD) / ((SHUNT_R * 4095) / 1000);
-    coeffi_b = -AMPOFFSET * 1000;
+    coeffi_a = (1000 * DEBUG_VDD) / ((DEBUG_SHUNT_R * 4095) / 1000);
+    coeffi_b = -DEBUG_AMPOFFSET * 1000;
     #endif
   }
 
@@ -282,17 +289,17 @@ void manageOnOff() {
 void manageDisp(uint16_t disp_set_Voltage, uint16_t disp_set_Current) {
   if (output) { // ON
     switch (dispmode) {
-      case DISPVOLTAGE:
+      case DISP_VOLTAGE:
         SEG_setNumber(Voltage, false);
         PIN_high(PIN_CV);
         PIN_low(PIN_CC);
         break;
-      case DISPCURRENT:
+      case DISP_CURRENT:
         SEG_setNumber(Current, false);
         PIN_low(PIN_CV);
         PIN_high(PIN_CC);
         break;
-      case DISPWATT:
+      case DISP_WATT:
         SEG_setNumber(Voltage * Current / 1000, false);
         PIN_high(PIN_CV);
         PIN_high(PIN_CC);
@@ -300,7 +307,7 @@ void manageDisp(uint16_t disp_set_Voltage, uint16_t disp_set_Current) {
     }
   } else { // OFF
     switch (dispmode) {
-      case DISPCURRENT:
+      case DISP_CURRENT:
         PIN_low(PIN_CV);
         PIN_high(PIN_CC);
         if (disp_set_Current == UINT16_MAX) {
@@ -309,10 +316,10 @@ void manageDisp(uint16_t disp_set_Voltage, uint16_t disp_set_Current) {
           SEG_setNumber(disp_set_Current, true);
         }
         break;
-      case DISPWATT:
-        dispmode = DISPVOLTAGE;
+      case DISP_WATT:
+        dispmode = DISP_VOLTAGE;
         // not need break
-      case DISPVOLTAGE:
+      case DISP_VOLTAGE:
         SEG_setNumber(disp_set_Voltage, true);
         PIN_high(PIN_CV);
         PIN_low(PIN_CC);
@@ -499,12 +506,12 @@ void ppsmode_setup() {
   for (uint8_t i = 1; i <= PD_getPDONum(); i++) {
     if (i <= PD_getFixedNum());
     else if (max_Voltage < PD_getPDOMaxVoltage(i)) { // select more high voltage
-      set_Voltage = DEFAULT_PPS_VOLTAGE;
+      set_Voltage = PPS_DEFAULT_VOLTAGE;
       min_Voltage = PD_getPDOMinVoltage(i);
       max_Voltage = PD_getPDOMaxVoltage(i);
       max_Current = PD_getPDOMaxCurrent(i);
       set_Current = max_Current;
-      min_Current = MIN_PPS_CURRENT;
+      min_Current = PPS_MIN_CURRENT;
       pdonum = i;
     }
   }
@@ -539,7 +546,7 @@ void ppsmode_setup() {
 
   // init
   count = 0;
-  dispmode = DISPVOLTAGE;
+  dispmode = DISP_VOLTAGE;
   output = false;
   invalid_voltage = !PD_setPPS(min_Voltage, set_Current);
 }
@@ -582,18 +589,18 @@ void ppsmode_loop() {
       case BUTTON_ANY: // under processing
         break;
       case BUTTON_DOWN_SHORT:
-        if (dispmode == DISPVOLTAGE) { // decrease voltage
+        if (dispmode == DISP_VOLTAGE) { // decrease voltage
           set_Voltage -= STEP_VOLTAGE_SHORT;
           if (set_Voltage < min_Voltage) set_Voltage = min_Voltage;
           temp_set_Voltage = set_Voltage;
-        } else if (dispmode == DISPCURRENT) {  // decrease current
+        } else if (dispmode == DISP_CURRENT) {  // decrease current
           set_Current -= STEP_CURRENT_SHORT;
           if (set_Current < min_Current) set_Current = min_Current;
           temp_set_Current = set_Current;
         }
         break;
       case BUTTON_DOWN_LONG_HOLD:
-        if (dispmode == DISPVOLTAGE && countflag) {
+        if (dispmode == DISP_VOLTAGE && countflag) {
           if ((set_Voltage - temp_set_Voltage) >= STEP_VOLTAGE_LONG_NEG) {
             set_Voltage = temp_set_Voltage;
           }
@@ -603,7 +610,7 @@ void ppsmode_loop() {
             set_Voltage = temp_set_Voltage;
           }
           countflag = false;
-        } else if (dispmode == DISPCURRENT && countflag) {
+        } else if (dispmode == DISP_CURRENT && countflag) {
           if ((set_Current - temp_set_Current) >= STEP_CURRENT_LONG_NEG) {
             set_Current = temp_set_Current;
           }
@@ -616,24 +623,24 @@ void ppsmode_loop() {
         }
         break;
       case BUTTON_DOWN_LONG_RELEASE:
-        if (dispmode == DISPVOLTAGE || dispmode == DISPCURRENT) {
+        if (dispmode == DISP_VOLTAGE || dispmode == DISP_CURRENT) {
           set_Voltage = temp_set_Voltage;
           set_Current = temp_set_Current;
         }
         break;
       case BUTTON_UP_SHORT:
-        if (dispmode == DISPVOLTAGE) {
+        if (dispmode == DISP_VOLTAGE) {
           set_Voltage += STEP_VOLTAGE_SHORT;
           if (set_Voltage > max_Voltage) set_Voltage = max_Voltage;
           temp_set_Voltage = set_Voltage;
-        } else if (dispmode == DISPCURRENT) {
+        } else if (dispmode == DISP_CURRENT) {
           set_Current += STEP_CURRENT_SHORT;
           if (set_Current > max_Current) set_Current = max_Current;
           temp_set_Current = set_Current;
         }
         break;
       case BUTTON_UP_LONG_HOLD:
-        if (dispmode == DISPVOLTAGE && countflag) {
+        if (dispmode == DISP_VOLTAGE && countflag) {
           if ((temp_set_Voltage - set_Voltage) >= STEP_VOLTAGE_LONG_NEG) {
             set_Voltage = temp_set_Voltage;
           }
@@ -643,7 +650,7 @@ void ppsmode_loop() {
             set_Voltage = temp_set_Voltage;
           }
           countflag = false;
-        } else if (dispmode == DISPCURRENT && countflag) {
+        } else if (dispmode == DISP_CURRENT && countflag) {
           if ((temp_set_Current - set_Current) >= STEP_CURRENT_LONG_NEG) {
             set_Current = temp_set_Current;
           }
@@ -656,26 +663,26 @@ void ppsmode_loop() {
         }
         break;
       case BUTTON_UP_LONG_RELEASE:
-        if (dispmode == DISPVOLTAGE || dispmode == DISPCURRENT) {
+        if (dispmode == DISP_VOLTAGE || dispmode == DISP_CURRENT) {
           set_Voltage = temp_set_Voltage;
           set_Current = temp_set_Current;
         }
         break;
       case BUTTON_CVCC_SHORT:
         switch (dispmode) {
-          case DISPWATT:
-            dispmode = DISPVOLTAGE;
+          case DISP_WATT:
+            dispmode = DISP_VOLTAGE;
             break;
-          case DISPVOLTAGE:
-            dispmode = DISPCURRENT;
+          case DISP_VOLTAGE:
+            dispmode = DISP_CURRENT;
             break;
-          case DISPCURRENT:
-            dispmode = DISPVOLTAGE;
+          case DISP_CURRENT:
+            dispmode = DISP_VOLTAGE;
             break;
         }
         break;
       case BUTTON_CVCC_LONG_HOLD:
-        if (output && dispmode < DISPWATT) dispmode = DISPWATT;
+        if (output && dispmode < DISP_WATT) dispmode = DISP_WATT;
         break;
       case BUTTON_OP_SHORT:
         if (!invalid_voltage) {
@@ -692,10 +699,10 @@ void ppsmode_loop() {
 // fix mode
 // ===================================================================================
 void fixmode_setup() {
-  // find pdo with DEFAULT_FIX_VOLTAGE
+  // find pdo with FIX_DEFAULT_VOLTAGE
   pdonum = 1;
   for (uint8_t i = 1; i <= PD_getFixedNum(); i++) {
-    if (PD_getPDOVoltage(i) == DEFAULT_FIX_VOLTAGE) {
+    if (PD_getPDOVoltage(i) == FIX_DEFAULT_VOLTAGE) {
       pdonum = i;
       break;
     }
@@ -705,7 +712,7 @@ void fixmode_setup() {
 
   // init
   count = 0;
-  dispmode = DISPVOLTAGE;
+  dispmode = DISP_VOLTAGE;
   output = false;
   invalid_voltage = !PD_setVoltage(set_Voltage);
 }
@@ -755,19 +762,19 @@ void fixmode_loop() {
         break;
       case BUTTON_CVCC_SHORT:
         switch (dispmode) {
-          case DISPWATT:
-            dispmode = DISPVOLTAGE;
+          case DISP_WATT:
+            dispmode = DISP_VOLTAGE;
             break;
-          case DISPVOLTAGE:
-            dispmode = DISPCURRENT;
+          case DISP_VOLTAGE:
+            dispmode = DISP_CURRENT;
             break;
-          case DISPCURRENT:
-            dispmode = DISPVOLTAGE;
+          case DISP_CURRENT:
+            dispmode = DISP_VOLTAGE;
             break;
         }
         break;
       case BUTTON_CVCC_LONG_HOLD:
-        if (output && dispmode < DISPWATT) dispmode = DISPWATT;
+        if (output && dispmode < DISP_WATT) dispmode = DISP_WATT;
         break;
       case BUTTON_OP_SHORT:
         if (!invalid_voltage) {
@@ -784,7 +791,7 @@ void fixmode_loop() {
 // 5V mode
 // ===================================================================================
 void fiveVmode() {
-  dispmode = DISPVOLTAGE;
+  dispmode = DISP_VOLTAGE;
   output = false;
 
   count = 0;
@@ -827,20 +834,20 @@ void fiveVmode() {
       case BUTTON_CVCC_SHORT:
         if (output) {
           switch (dispmode) {
-            case DISPWATT:
-              dispmode = DISPVOLTAGE;
+            case DISP_WATT:
+              dispmode = DISP_VOLTAGE;
               break;
-            case DISPVOLTAGE:
-              dispmode = DISPCURRENT;
+            case DISP_VOLTAGE:
+              dispmode = DISP_CURRENT;
               break;
-            case DISPCURRENT:
-              dispmode = DISPVOLTAGE;
+            case DISP_CURRENT:
+              dispmode = DISP_VOLTAGE;
               break;
           }
         }
         break;
       case BUTTON_CVCC_LONG_HOLD:
-        if (output && dispmode < DISPWATT) dispmode = DISPWATT;
+        if (output && dispmode < DISP_WATT) dispmode = DISP_WATT;
         break;
       case BUTTON_OP_SHORT:
         PIN_low(PIN_ONOFF);
@@ -1043,7 +1050,7 @@ void triggermode_setup() {
 
   // init
   count = 0;
-  dispmode = DISPVOLTAGE;
+  dispmode = DISP_VOLTAGE;
   output = false;
 
   // check voltage and output
@@ -1101,19 +1108,19 @@ void triggermode_loop() {
         break;
       case BUTTON_CVCC_SHORT:
         switch (dispmode) {
-          case DISPWATT:
-            dispmode = DISPVOLTAGE;
+          case DISP_WATT:
+            dispmode = DISP_VOLTAGE;
             break;
-          case DISPVOLTAGE:
-            dispmode = DISPCURRENT;
+          case DISP_VOLTAGE:
+            dispmode = DISP_CURRENT;
             break;
-          case DISPCURRENT:
-            dispmode = DISPVOLTAGE;
+          case DISP_CURRENT:
+            dispmode = DISP_VOLTAGE;
             break;
         }
         break;
       case BUTTON_CVCC_LONG_HOLD:
-        if (dispmode < DISPWATT) dispmode = DISPWATT;
+        if (dispmode < DISP_WATT) dispmode = DISP_WATT;
         break;
       default:
         break;
@@ -1134,9 +1141,9 @@ void triggersetmode_setup() {
 
   // init
   count = 0;
-  dispmode = DISPVOLTAGE;
+  dispmode = DISP_VOLTAGE;
   output = false;
-  trigger_voltage = DEFAULT_PPS_VOLTAGE;
+  trigger_voltage = PPS_DEFAULT_VOLTAGE;
   trigger_current = UINT16_MAX; // not set current limit
 }
 
@@ -1160,64 +1167,64 @@ void triggersetmode_loop() {
       case BUTTON_ANY:
         break;
       case BUTTON_DOWN_SHORT:
-        if (dispmode == DISPVOLTAGE) {
+        if (dispmode == DISP_VOLTAGE) {
           trigger_voltage -= STEP_VOLTAGE_SHORT;
-          if (trigger_voltage < MIN_TRIGGER_V) trigger_voltage = MIN_TRIGGER_V;
-        } else if (dispmode == DISPCURRENT) {
+          if (trigger_voltage < TRIGGER_MIN_VOLTAGE) trigger_voltage = TRIGGER_MIN_VOLTAGE;
+        } else if (dispmode == DISP_CURRENT) {
           if (trigger_current == UINT16_MAX) {
-            trigger_current = MAX_TRIGGER_A;
+            trigger_current = TRIGGER_MAX_CURRENT;
           } else {
             trigger_current -= STEP_CURRENT_SHORT;
           }
-          if (trigger_current < MIN_TRIGGER_A) trigger_current = MIN_TRIGGER_A;
+          if (trigger_current < TRIGGER_MIN_CURRENT) trigger_current = TRIGGER_MIN_CURRENT;
         }
         break;
       case BUTTON_DOWN_LONG_HOLD:
-        if (dispmode == DISPVOLTAGE && countflag) {
+        if (dispmode == DISP_VOLTAGE && countflag) {
           trigger_voltage -= STEP_VOLTAGE_LONG;
-          if (trigger_voltage < MIN_TRIGGER_V) trigger_voltage = MIN_TRIGGER_V;
-        } else if (dispmode == DISPCURRENT && countflag) {
+          if (trigger_voltage < TRIGGER_MIN_VOLTAGE) trigger_voltage = TRIGGER_MIN_VOLTAGE;
+        } else if (dispmode == DISP_CURRENT && countflag) {
           if (trigger_current == UINT16_MAX) {
-            trigger_current = MAX_TRIGGER_A;
+            trigger_current = TRIGGER_MAX_CURRENT;
           } else {
             trigger_current -= STEP_CURRENT_LONG;
           }
-          if (trigger_current < MIN_TRIGGER_A) trigger_current = MIN_TRIGGER_A;
+          if (trigger_current < TRIGGER_MIN_CURRENT) trigger_current = TRIGGER_MIN_CURRENT;
         }
         countflag = false;
         break;
       case BUTTON_UP_SHORT:
-        if (dispmode == DISPVOLTAGE) {
+        if (dispmode == DISP_VOLTAGE) {
           trigger_voltage += STEP_VOLTAGE_SHORT;
-          if (trigger_voltage > MAX_TRIGGER_V) trigger_voltage = MAX_TRIGGER_V;
-        } else if (dispmode == DISPCURRENT) {
+          if (trigger_voltage > TRIGGER_MAX_VOLTAGE) trigger_voltage = TRIGGER_MAX_VOLTAGE;
+        } else if (dispmode == DISP_CURRENT) {
           trigger_current += STEP_CURRENT_SHORT;
-          if (trigger_current > MAX_TRIGGER_A) trigger_current = UINT16_MAX;
+          if (trigger_current > TRIGGER_MAX_CURRENT) trigger_current = UINT16_MAX;
         }
         break;
       case BUTTON_UP_LONG_HOLD:
-        if (dispmode == DISPVOLTAGE && countflag) {
+        if (dispmode == DISP_VOLTAGE && countflag) {
           trigger_voltage += STEP_VOLTAGE_LONG;
-          if (trigger_voltage > MAX_TRIGGER_V) trigger_voltage = MAX_TRIGGER_V;
-        } else if (dispmode == DISPCURRENT && countflag) {
+          if (trigger_voltage > TRIGGER_MAX_VOLTAGE) trigger_voltage = TRIGGER_MAX_VOLTAGE;
+        } else if (dispmode == DISP_CURRENT && countflag) {
           trigger_current += STEP_CURRENT_LONG;
-          if (trigger_current > MAX_TRIGGER_A) trigger_current = UINT16_MAX;
+          if (trigger_current > TRIGGER_MAX_CURRENT) trigger_current = UINT16_MAX;
         }
         countflag = false;
         break;
       case BUTTON_CVCC_SHORT:
         switch (dispmode) {
-          case DISPVOLTAGE:
-            dispmode = DISPCURRENT;
+          case DISP_VOLTAGE:
+            dispmode = DISP_CURRENT;
             break;
-          case DISPCURRENT:
-            dispmode = DISPVOLTAGE;
+          case DISP_CURRENT:
+            dispmode = DISP_VOLTAGE;
             break;
         }
         break;
       case BUTTON_OP_SHORT:
-        if (MIN_TRIGGER_V <= trigger_voltage && trigger_voltage <= MAX_TRIGGER_V && 
-        ((MIN_TRIGGER_A <= trigger_current && trigger_current <= MAX_TRIGGER_A) || trigger_current == UINT16_MAX)) {
+        if (TRIGGER_MIN_VOLTAGE <= trigger_voltage && trigger_voltage <= TRIGGER_MAX_VOLTAGE && 
+        ((TRIGGER_MIN_CURRENT <= trigger_current && trigger_current <= TRIGGER_MAX_CURRENT) || trigger_current == UINT16_MAX)) {
           if (writeCoeff()) {
             DLY_ms(100);
             if (readTrigger()) {
