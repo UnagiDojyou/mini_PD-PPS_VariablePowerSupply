@@ -1,4 +1,6 @@
-# mini PD-PPS VariablePowerSupply
+# mini PD-PPS VariablePowerSupply for V1,V2 board
+古いボード(V1,V2)用のファームウェアです。組み立て方法やファアームウェアの焼き方は[小型可変電源「mini PD-PPS VariablePowerSupply」のV1基板の組み立て方
+](https://unagidojyou.com/2024/06-08/mini_pd-pps_variablepowersupply_build/)<p>
 詳しくは[USB PD PPSを使用した小型可変電源「mini PD-PPS VariablePowerSupply」](https://unagidojyou.com/2024/06-08/mini_pd-pps_variablepowersupply/)  <p>
 Draw any(3.3~21) voltage you want using USB PD PPS.  
 * PPS mode : Can be set 3.3~21V in 0.1V,0.1A increments

@@ -6,129 +6,154 @@
 static void SEG_setRegister(uint8_t num) {
   switch (num) {
     case SEG_0:
-      GPIOA->BSHR = SEG_0_REGA; // set SEG_E, SEG_D
-      GPIOB->BSHR = SEG_0_REGB; // reset SEG_OP, SEG_G. set SEG_C, SEG_B
-      GPIOC->BSHR = SEG_0_REGC; // set SEG_A, SEG_D
+      GPIOA->BSHR = SEG_0_REGAH; // set SEG_D,SEG_E,SEG_A2,SEG_A3
+      GPIOB->BSHR = SEG_0_REGBH; // reset SEG_G set SEG_A1
+      GPIOC->BSHR = SEG_0_REGCH; // set SEG_A0,SEG_F
+      GPIOC->BSXR = SEG_0_REGCX; // reset SEG_OP set SEG_B,SEG_C
       break;
     case SEG_1:
-      GPIOA->BSHR = SEG_1_REGA;
-      GPIOB->BSHR = SEG_1_REGB;
-      GPIOC->BSHR = SEG_1_REGC;
+      GPIOA->BSHR = SEG_1_REGAH;
+      GPIOB->BSHR = SEG_1_REGBH;
+      GPIOC->BSHR = SEG_1_REGCH;
+      GPIOC->BSXR = SEG_1_REGCX;
       break;
     case SEG_2:
-      GPIOA->BSHR = SEG_2_REGA;
-      GPIOB->BSHR = SEG_2_REGB;
-      GPIOC->BSHR = SEG_2_REGC;
+      GPIOA->BSHR = SEG_2_REGAH;
+      GPIOB->BSHR = SEG_2_REGBH;
+      GPIOC->BSHR = SEG_2_REGCH;
+      GPIOC->BSXR = SEG_2_REGCX;
       break;
     case SEG_3:
-      GPIOA->BSHR = SEG_3_REGA;
-      GPIOB->BSHR = SEG_3_REGB;
-      GPIOC->BSHR = SEG_3_REGC;
+      GPIOA->BSHR = SEG_3_REGAH;
+      GPIOB->BSHR = SEG_3_REGBH;
+      GPIOC->BSHR = SEG_3_REGCH;
+      GPIOC->BSXR = SEG_3_REGCX;
       break;
     case SEG_4:
-      GPIOA->BSHR = SEG_4_REGA;
-      GPIOB->BSHR = SEG_4_REGB;
-      GPIOC->BSHR = SEG_4_REGC;
+      GPIOA->BSHR = SEG_4_REGAH;
+      GPIOB->BSHR = SEG_4_REGBH;
+      GPIOC->BSHR = SEG_4_REGCH;
+      GPIOC->BSXR = SEG_4_REGCX;
       break;
     case SEG_5:
-      GPIOA->BSHR = SEG_5_REGA;
-      GPIOB->BSHR = SEG_5_REGB;
-      GPIOC->BSHR = SEG_5_REGC;
+      GPIOA->BSHR = SEG_5_REGAH;
+      GPIOB->BSHR = SEG_5_REGBH;
+      GPIOC->BSHR = SEG_5_REGCH;
+      GPIOC->BSXR = SEG_5_REGCX;
       break;
     case SEG_6:
-      GPIOA->BSHR = SEG_6_REGA;
-      GPIOB->BSHR = SEG_6_REGB;
-      GPIOC->BSHR = SEG_6_REGC;
+      GPIOA->BSHR = SEG_6_REGAH;
+      GPIOB->BSHR = SEG_6_REGBH;
+      GPIOC->BSHR = SEG_6_REGCH;
+      GPIOC->BSXR = SEG_6_REGCX;
       break;
     case SEG_7:
-      GPIOA->BSHR = SEG_7_REGA;
-      GPIOB->BSHR = SEG_7_REGB;
-      GPIOC->BSHR = SEG_7_REGC;
+      GPIOA->BSHR = SEG_7_REGAH;
+      GPIOB->BSHR = SEG_7_REGBH;
+      GPIOC->BSHR = SEG_7_REGCH;
+      GPIOC->BSXR = SEG_7_REGCX;
       break;
     case SEG_8:
-      GPIOA->BSHR = SEG_8_REGA;
-      GPIOB->BSHR = SEG_8_REGB;
-      GPIOC->BSHR = SEG_8_REGC;
+      GPIOA->BSHR = SEG_8_REGAH;
+      GPIOB->BSHR = SEG_8_REGBH;
+      GPIOC->BSHR = SEG_8_REGCH;
+      GPIOC->BSXR = SEG_8_REGCX;
       break;
     case SEG_9:
-      GPIOA->BSHR = SEG_9_REGA;
-      GPIOB->BSHR = SEG_9_REGB;
-      GPIOC->BSHR = SEG_9_REGC;
+      GPIOA->BSHR = SEG_9_REGAH;
+      GPIOB->BSHR = SEG_9_REGBH;
+      GPIOC->BSHR = SEG_9_REGCH;
+      GPIOC->BSXR = SEG_9_REGCX;
       break;
     case SEG_NON: // no display
-      GPIOA->BSHR = SEG_NON_REGA;
-      GPIOB->BSHR = SEG_NON_REGB;
-      GPIOC->BSHR = SEG_NON_REGC;
+      GPIOA->BSHR = SEG_NON_REGAH;
+      GPIOB->BSHR = SEG_NON_REGBH;
+      GPIOC->BSHR = SEG_NON_REGCH;
+      GPIOC->BSXR = SEG_NON_REGCX;
       break;
     case SEG_MINUS: // display "-"
-      GPIOA->BSHR = SEG_MINUS_REGA;
-      GPIOB->BSHR = SEG_MINUS_REGB;
-      GPIOC->BSHR = SEG_MINUS_REGC;
+      GPIOA->BSHR = SEG_MINUS_REGAH;
+      GPIOB->BSHR = SEG_MINUS_REGBH;
+      GPIOC->BSHR = SEG_MINUS_REGCH;
+      GPIOC->BSXR = SEG_MINUS_REGCX;
       break;
     case SEG_F: // F
-      GPIOA->BSHR = SEG_F_REGA;
-      GPIOB->BSHR = SEG_F_REGB;
-      GPIOC->BSHR = SEG_F_REGC;
+      GPIOA->BSHR = SEG_F_REGAH;
+      GPIOB->BSHR = SEG_F_REGBH;
+      GPIOC->BSHR = SEG_F_REGCH;
+      GPIOC->BSXR = SEG_F_REGCX;
       break;
     case SEG_I: // I
-      GPIOA->BSHR = SEG_I_REGA;
-      GPIOB->BSHR = SEG_I_REGB;
-      GPIOC->BSHR = SEG_I_REGC;
+      GPIOA->BSHR = SEG_I_REGAH;
+      GPIOB->BSHR = SEG_I_REGBH;
+      GPIOC->BSHR = SEG_I_REGCH;
+      GPIOC->BSXR = SEG_I_REGCX;
       break;
     case SEG_X: // X
-      GPIOA->BSHR = SEG_X_REGA;
-      GPIOB->BSHR = SEG_X_REGB;
-      GPIOC->BSHR = SEG_X_REGC;
+      GPIOA->BSHR = SEG_X_REGAH;
+      GPIOB->BSHR = SEG_X_REGBH;
+      GPIOC->BSHR = SEG_X_REGCH;
+      GPIOC->BSXR = SEG_X_REGCX;
       break;
     case SEG_P: // P
-      GPIOA->BSHR = SEG_P_REGA;
-      GPIOB->BSHR = SEG_P_REGB;
-      GPIOC->BSHR = SEG_P_REGC;
+      GPIOA->BSHR = SEG_P_REGAH;
+      GPIOB->BSHR = SEG_P_REGBH;
+      GPIOC->BSHR = SEG_P_REGCH;
+      GPIOC->BSXR = SEG_P_REGCX;
       break;
     case SEG_C: // C
-      GPIOA->BSHR = SEG_C_REGA;
-      GPIOB->BSHR = SEG_C_REGB;
-      GPIOC->BSHR = SEG_C_REGC;
+      GPIOA->BSHR = SEG_C_REGAH;
+      GPIOB->BSHR = SEG_C_REGBH;
+      GPIOC->BSHR = SEG_C_REGCH;
+      GPIOC->BSXR = SEG_C_REGCX;
       break;
     case SEG_A: // A
-      GPIOA->BSHR = SEG_A_REGA;
-      GPIOB->BSHR = SEG_A_REGB;
-      GPIOC->BSHR = SEG_A_REGC;
+      GPIOA->BSHR = SEG_A_REGAH;
+      GPIOB->BSHR = SEG_A_REGBH;
+      GPIOC->BSHR = SEG_A_REGCH;
+      GPIOC->BSXR = SEG_A_REGCX;
       break;
     case SEG_L: // L
-      GPIOA->BSHR = SEG_L_REGA;
-      GPIOB->BSHR = SEG_L_REGB;
-      GPIOC->BSHR = SEG_L_REGC;
+      GPIOA->BSHR = SEG_L_REGAH;
+      GPIOB->BSHR = SEG_L_REGBH;
+      GPIOC->BSHR = SEG_L_REGCH;
+      GPIOC->BSXR = SEG_L_REGCX;
       break;
     case SEG_E: // E
-      GPIOA->BSHR = SEG_E_REGA;
-      GPIOB->BSHR = SEG_E_REGB;
-      GPIOC->BSHR = SEG_E_REGC;
+      GPIOA->BSHR = SEG_E_REGAH;
+      GPIOB->BSHR = SEG_E_REGBH;
+      GPIOC->BSHR = SEG_E_REGCH;
+      GPIOC->BSXR = SEG_E_REGCX;
       break;
     case SEG_T: // T
-      GPIOA->BSHR = SEG_T_REGA;
-      GPIOB->BSHR = SEG_T_REGB;
-      GPIOC->BSHR = SEG_T_REGC;
+      GPIOA->BSHR = SEG_T_REGAH;
+      GPIOB->BSHR = SEG_T_REGBH;
+      GPIOC->BSHR = SEG_T_REGCH;
+      GPIOC->BSXR = SEG_T_REGCX;
       break;
     case SEG_R: // R
-      GPIOA->BSHR = SEG_R_REGA;
-      GPIOB->BSHR = SEG_R_REGB;
-      GPIOC->BSHR = SEG_R_REGC;
+      GPIOA->BSHR = SEG_R_REGAH;
+      GPIOB->BSHR = SEG_R_REGBH;
+      GPIOC->BSHR = SEG_R_REGCH;
+      GPIOC->BSXR = SEG_R_REGCX;
       break;
     case SEG_G: // G
-      GPIOA->BSHR = SEG_G_REGA;
-      GPIOB->BSHR = SEG_G_REGB;
-      GPIOC->BSHR = SEG_G_REGC;
+      GPIOA->BSHR = SEG_G_REGAH;
+      GPIOB->BSHR = SEG_G_REGBH;
+      GPIOC->BSHR = SEG_G_REGCH;
+      GPIOC->BSXR = SEG_G_REGCX;
       break;
     case SEG_D: // D
-      GPIOA->BSHR = SEG_D_REGA;
-      GPIOB->BSHR = SEG_D_REGB;
-      GPIOC->BSHR = SEG_D_REGC;
+      GPIOA->BSHR = SEG_D_REGAH;
+      GPIOB->BSHR = SEG_D_REGBH;
+      GPIOC->BSHR = SEG_D_REGCH;
+      GPIOC->BSXR = SEG_D_REGCX;
       break;
     case SEG_V: // V
-      GPIOA->BSHR = SEG_V_REGA;
-      GPIOB->BSHR = SEG_V_REGB;
-      GPIOC->BSHR = SEG_V_REGC;
+      GPIOA->BSHR = SEG_V_REGAH;
+      GPIOB->BSHR = SEG_V_REGBH;
+      GPIOC->BSHR = SEG_V_REGCH;
+      GPIOC->BSXR = SEG_V_REGCX;
       break;
     default:
       break;
@@ -212,63 +237,81 @@ void SEG_driver() {
 static uint8_t BUTTON_pushed = 0; // last pushed button. 0 = none
 static uint8_t BUTTON_pushing = 0;
 static uint16_t BUTTON_count = 0; // how long button is pressed
+bool button_sampled = false; // if any button is pushed ,be true
 // short push return Normal,long pushing return *10,release after long press retun *10+
 uint8_t BUTTON_read() {
   // read button
-  if (!PIN_read(PIN_BUTTON)) {
-    switch (SEG_driving) {
+  if(PIN_read(PIN_BUTTON)){ // HIGH
+    if(!button_sampled && SEG_driving == PIN_SEG_A2){ // when SEG_A1 was low and SEG_A2 is high
+      BUTTON_pushing = BUTTON_OP_SHORT;
+    }else if(SEG_driving == PIN_SEG_A3 && BUTTON_pushing == 0 && button_sampled){ // always high
+      BUTTON_pushing = BUTTON_DOWN_SHORT;
+    }
+    button_sampled = true;
+  }else if(button_sampled){
+    switch(SEG_driving){
       case PIN_SEG_A1:
-        BUTTON_pushing = BUTTON_OP_SHORT;
+        // none
         break;
       case PIN_SEG_A2:
         BUTTON_pushing = BUTTON_CVCC_SHORT;
         break;
       case PIN_SEG_A3:
-        BUTTON_pushing = BUTTON_UP_SHORT;
+        if(BUTTON_pushing == 0){
+          BUTTON_pushing = BUTTON_UP_SHORT;
+        }else{ // double press?
+          button_sampled = false;
+          BUTTON_pushing = 0;
+        }
+        break;
+      default:
+        break;
     }
-    BUTTON_count++;
-  } else if (PIN_read(PIN_BOOT_BUTTON)) {
-    BUTTON_pushing = BUTTON_DOWN_SHORT;
-    BUTTON_count++;
-  } else if (BUTTON_pushing) {
-    if (BUTTON_pushing == BUTTON_OP_SHORT && SEG_driving == PIN_SEG_A1) {
-      BUTTON_pushing = 0;
-      BUTTON_pushed = BUTTON_OP_SHORT;
-    } else if (BUTTON_pushing == BUTTON_CVCC_SHORT && SEG_driving == PIN_SEG_A2) {
-      BUTTON_pushing = 0;
-      BUTTON_pushed = BUTTON_CVCC_SHORT;
-    } else if (BUTTON_pushing == BUTTON_UP_SHORT && SEG_driving == PIN_SEG_A3) {
-      BUTTON_pushing = 0;
-      BUTTON_pushed = BUTTON_UP_SHORT;
-    } else if (BUTTON_pushing == BUTTON_DOWN_SHORT && !PIN_read(PIN_BOOT_BUTTON)) {
-      BUTTON_pushing = 0;
-      BUTTON_pushed = BUTTON_DOWN_SHORT;
-    } else {
-      BUTTON_count++;
-    }
+  }else{ // released
+    button_sampled = false;
+    BUTTON_pushing = 0;
   }
 
-  // reset and return
-  if (BUTTON_pushing && BUTTON_count > BUTTON_LONGCOUNT) {
-    return BUTTON_LONG_HOLD(BUTTON_pushing); // long pressing
-  } else if (!BUTTON_pushing && BUTTON_pushed) { // release
-    uint8_t temp;
-    if (BUTTON_count > BUTTON_LONGCOUNT) {
-      BUTTON_count = 0;
-      temp = BUTTON_pushed;
+  // count and reset
+  if(SEG_driving == PIN_SEG_A3){
+    if(button_sampled){ // any button was pushed
+      if(BUTTON_pushing == BUTTON_pushed){ // button is pushed
+        BUTTON_count++;
+        if(BUTTON_count > BUTTON_LONGCOUNT){
+          BUTTON_pushing = 0;
+          button_sampled = false;
+          return BUTTON_LONG_HOLD(BUTTON_pushed); // long pressing
+        }
+      }else{ // pushed button is changed or pressed
+        BUTTON_count = 1;
+        BUTTON_pushed = BUTTON_pushing;
+      }
+    }else if(BUTTON_pushed > 0){ // button is relased
+      if(BUTTON_count > BUTTON_LONGCOUNT){
+        BUTTON_count = 0;
+        BUTTON_pushing = BUTTON_pushed; // temp
+        BUTTON_pushed = 0;
+        button_sampled = false;
+        return BUTTON_LONG_RELEASE(BUTTON_pushing); // relase after long press
+      }else if(BUTTON_count > BUTTON_SHORTCOUNT){
+        BUTTON_count = 0;
+        BUTTON_pushing = BUTTON_pushed;
+        BUTTON_pushed = 0;
+        button_sampled = false;
+        return BUTTON_pushing; // short pushed
+      }else{ // chattering
+        BUTTON_pushed = 0;
+        BUTTON_count = 0;
+      }
+    }else{ // no button is pushed
       BUTTON_pushed = 0;
-      return BUTTON_LONG_RELEASE(temp); // release after long press
-    } else if (BUTTON_count > BUTTON_SHORTCOUNT) {
       BUTTON_count = 0;
-      temp = BUTTON_pushed;
-      BUTTON_pushed = 0;
-      return temp; // short pressed
-    } else { // chattering
+      return 0;
     }
-  } else if (BUTTON_pushing) {
-    return BUTTON_ANY; // pushing some button
+    // reset
+    BUTTON_pushing = 0;
+    button_sampled = false;
+    return 0;
   }
-  BUTTON_count = 0;
-  BUTTON_pushed = 0;
-  return 0; // not pushed
+  return 255;
 }

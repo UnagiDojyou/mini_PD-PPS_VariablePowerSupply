@@ -29,7 +29,7 @@ extern "C" {
 #define BUTTON_IS_SHORT(button_num) (BUTTON_DOWN_SHORT <= button_num && button_num <= BUTTON_OP_SHORT)
 
 #define BUTTON_LONGCOUNT 250 // time of recognized as a long press
-#define BUTTON_SHORTCOUNT 3 // time of recognized as a short press
+#define BUTTON_SHORTCOUNT 2 // time of recognized as a short press
 
 // 7seg pattern define
 #define SEG_0 0

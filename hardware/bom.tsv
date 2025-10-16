@@ -1,24 +1,23 @@
 Reference	Value	説明	Datasheet	Footprint	Qty	DNP
-C1,C3	0.1u	Unpolarized capacitor	~	Capacitor_SMD:C_0603_1608Metric	2	
-C2	4.7u	Unpolarized capacitor	~	Capacitor_SMD:C_0603_1608Metric	1	
-D1	Ope	Light emitting diode	~	LED_SMD:LED_0603_1608Metric	1	
-D2	D_Zener	Zener Voltage 25~30V	https://www.lcsc.com/product-detail/C47117503.html	Diode_SMD:D_SMA	1	
-D3	CV	0603_1608 Green LED	~	LED_SMD:LED_0603_1608Metric	1	
-D4	CC	0603_1608 Red LED	~	LED_SMD:LED_0603_1608Metric	1	
-D5	SS14	Diode	~	Diode_SMD:D_SMA	1	
-J1	USB_C_Receptacle_USB2.0_14P	USB 2.0-only 14P Type-C Receptacle connector	https://www.lcsc.com/datasheet/C2988369.pdf	Connector_USB:USB_C_Receptacle_HRO_TYPE-C-31-M-12	1	
-J2	Screw_Terminal_01x02	Generic screw terminal, single row, 01x02, script generated (kicad-library-utils/schlib/autogen/connector/)	~	TerminalBlock:TerminalBlock_MaiXu_MX126-5.0-02P_1x02_P5.00mm	1	
-Q1	SC009NG-S	SOP-8 MOSFET Source1-3, Gate4,Drain5-8	https://www.lcsc.com/datasheet/C41367293.pdf	Custom_Library:SOP-8_MOSFET_3.9x4.9mm_P1.27mm	1	
-R1,R2	5k	Resistor	~	Resistor_SMD:R_0603_1608Metric	2	
-R5	10k	Resistor	~	Resistor_SMD:R_0603_1608Metric	1	
-R6,R7,R10,R11,RN1,RN2,RN3	1k	4 resistor network, parallel topology, split,Resistor	~	Resistor_SMD:R_0603_1608Metric,Resistor_SMD:R_Array_Concave_4x0603	7	
-R8	20k	Resistor	~	Resistor_SMD:R_0603_1608Metric	1	
-R9	10m	size 2512. Good temperature characteristics is preferred.	https://www.lcsc.com/product-detail/C42759027.html	Resistor_SMD:R_2512_6332Metric	1	
-SW1	OUTPUT	Push button switch, generic, two pins	~	Button_Switch_SMD:SW_SPST_CK_RS282G05A3	1	
-SW2	CC/CV	Push button switch, generic, two pins	~	Button_Switch_SMD:SW_SPST_CK_RS282G05A3	1	
-SW3	UP	Push button switch, generic, two pins	~	Button_Switch_SMD:SW_SPST_CK_RS282G05A3	1	
-SW4	Down	Push button switch, generic, two pins	~	Button_Switch_SMD:SW_SPST_CK_RS282G05A3	1	
-TP5,TP6	TestPoint	test point	~	TestPoint:TestPoint_Pad_D1.0mm	2	
-U1	CH32X035G8U6	48MHz RISC-V MCU with USB PD phy (Sink, Source, DRP), USB 2.0 Full speed phy (Host, Device), 20KB RAM, 62KB Flash, WQFN-28	https://www.lcsc.com/datasheet/C7437027.pdf	Package_DFN_QFN:WQFN-28-1EP_4x4mm_P0.4mm_EP2.7x2.7mm	1	
-U2	HT7130-1-SOT89	100mA Low Dropout Voltage Regulator, Fixed Output, SOT89	https://www.lcsc.com/datasheet/C33129553.pdf	Package_TO_SOT_SMD:SOT-89-3	1	
-U3	~	0.28inch Common Cathode	https://www.lcsc.com/datasheet/C122944.pdf	My_Library:7seg0.28inch3bit	1	
+C3	4.7u	MLCC	~	Capacitor_SMD:C_0603_1608Metric	1	
+C4,C5	0.1u	MLCC	~	Capacitor_SMD:C_0603_1608Metric	2	
+D1	Ope	0603_1608 Green LED	~	LED_SMD:LED_0603_1608Metric	1	
+D2	CV	0603_1608 Green LED	~	LED_SMD:LED_0603_1608Metric	1	
+D3	CC	0603_1608 Red LED	~	LED_SMD:LED_0603_1608Metric	1	
+J1	USB_C_Receptacle_USB2.0_14P	TYPE-C-31-M-12	http://www.krhro.com/uploads/soft/180320/1-1P320120243.pdf	Connector_USB:USB_C_Receptacle_HRO_TYPE-C-31-M-12	1	
+J2	WJ301-5.0-02P		https://www.lcsc.com/datasheet/lcsc_datasheet_2303171000_Cixi-Kefa-Elec-KF300-5-0-2P_C474885.pdf	digikey-footprints:Term_Block_1x2_P5mm	1	
+Q1	AO3400A	30V Vds, 5.7A Id, N-Channel MOSFET, SOT-23	http://www.aosmd.com/pdfs/datasheet/AO3400A.pdf	Package_TO_SOT_SMD:SOT-23	1	
+R3	0.1	2512_6332 Resistor	~	Resistor_SMD:R_2512_6332Metric	1	
+R4,R5,R7	1k	0603_1608 Resistor	~	Resistor_SMD:R_0603_1608Metric	3	
+R8	47k	0603_1608 Resistor	~	Resistor_SMD:R_0603_1608Metric	1	
+R9	7.5k	0603_1608 Resistor	~	Resistor_SMD:R_0603_1608Metric	1	
+R10,R11	5.1k	0603_1608 Resistor	~	Resistor_SMD:R_0603_1608Metric	2	
+RN1	R5.1k	0603_1608 4 resistor network, split		Resistor_SMD:R_Array_Convex_4x0603	1	
+RN2,RN3	R1k	0603_1608 4 resistor network, split		Resistor_SMD:R_Array_Convex_4x0603	2	
+SW1	Down&boot	Same size switch as BZCN TSB008A2526A etc	https://www.lcsc.com/datasheet/lcsc_datasheet_2108261830_BZCN-TSB008A2526A_C2888456.pdf	My_Library:SW_push_button_SMD_2pin_Rectangle	1	
+SW2	UP	Same size switch as BZCN TSB008A2526A etc	https://www.lcsc.com/datasheet/lcsc_datasheet_2108261830_BZCN-TSB008A2526A_C2888456.pdf	My_Library:SW_push_button_SMD_2pin_Rectangle	1	
+SW3	CC/CV	Same size switch as BZCN TSB008A2526A etc	https://www.lcsc.com/datasheet/lcsc_datasheet_2108261830_BZCN-TSB008A2526A_C2888456.pdf	My_Library:SW_push_button_SMD_2pin_Rectangle	1	
+SW4	OUTPUT	Same size switch as BZCN TSB008A2526A etc	https://www.lcsc.com/datasheet/lcsc_datasheet_2108261830_BZCN-TSB008A2526A_C2888456.pdf	My_Library:SW_push_button_SMD_2pin_Rectangle	1	
+U1	CH32X035F7P6	MCU	https://www.wch-ic.com/downloads/CH32X035DS0_PDF.html	Package_SO:TSSOP-20_4.4x6.5mm_P0.65mm	1	
+U2	SP420281N	Red 3bit 0.28inch Common Cathode	https://www.lcsc.com/datasheet/lcsc_datasheet_1811041510_ARKLED-Wuxi-ARK-Tech-Elec-SP420281N_C122944.pdf	My_Library:7seg0.28inch3bit	1	
+U3	HT7130-SOT89	3.0V LDO, input voltage up to 24V	https://www.lcsc.com/datasheet/lcsc_datasheet_2311091733_UMW-Youtai-Semiconductor-Co---Ltd--HT7130-1_C347180.pdf	Package_TO_SOT_SMD:SOT-89-3	1	
