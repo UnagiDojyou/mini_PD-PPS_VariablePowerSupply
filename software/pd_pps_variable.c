@@ -1,5 +1,5 @@
 // ===================================================================================
-// mini PD-PPS VariablePowerSupply firmware
+// mini PD-PPS VariablePowerSupply firmware for V1,V2 board
 #define VERSION 920 // 0.92
 // Author: Unagi Dojyou
 // based on https://github.com/wagiminator
@@ -55,8 +55,8 @@
 #define FIX_DEFAULT_VOLTAGE 5000 // 5V
 #define TRIGGER_MAX_VOLTAGE 21000 // 21V
 #define TRIGGER_MIN_VOLTAGE 3300 // 3.3V
-#define TRIGGER_MIN_CURRNT PPS_MIN_CURRENT
-#define TRIGGER_MAX_CURRNT PPS_MAX_CURRENT
+#define TRIGGER_MIN_CURRENT PPS_MIN_CURRENT
+#define TRIGGER_MAX_CURRENT PPS_MAX_CURRENT
 
 // over current protection
 #define LIMIT_CURRENT 500 // set_current + 500mA
@@ -152,7 +152,7 @@ bool readTrigger() {
   trigger_voltage = FLASH_read4Byte(FLASH_ADD_TRIGGER_V);
   trigger_current = FLASH_read4Byte(FLASH_ADD_TRIGGER_I);
   return (TRIGGER_MIN_VOLTAGE <= trigger_voltage && trigger_voltage <= TRIGGER_MAX_VOLTAGE && 
-  ((TRIGGER_MIN_CURRNT <= trigger_current && trigger_current <= TRIGGER_MAX_CURRNT) || trigger_current == UINT16_MAX));
+  ((TRIGGER_MIN_CURRENT <= trigger_current && trigger_current <= TRIGGER_MAX_CURRENT) || trigger_current == UINT16_MAX));
 }
 
 // write the coefficients for voltage/current value
@@ -344,6 +344,10 @@ int main(void) {
   PIN_input(PIN_CVCC);
   PIN_input_PD(PIN_BUTTON); //pull down
  
+  PIN_output(PIN_SEG_A1);
+  PIN_output(PIN_SEG_A2);
+  PIN_output(PIN_SEG_A3);
+
   PIN_output(PIN_SEG_A0);
   PIN_output(PIN_SEG_B);
   PIN_output(PIN_SEG_C);
@@ -896,12 +900,12 @@ void calmode() {
     SEG_driver();
   } while (!BUTTON_IS_SHORT(count));
   sum = 0;
-  for (int i = 0; i < MAXCOUNT; i++) {
+  for (uint8_t i = 0; i < MAXCOUNT; i++) {
     ADC_input(PIN_V_ADC);
     DLY_ms(1);
     sum += ADC_read();
   }
-  aveV2 = (sum / MAXCOUNT) * 100;
+  aveV2 = (100 * sum) / MAXCOUNT;
 
   // calivration 0.00A
   PIN_low(PIN_ONOFF);
@@ -1167,11 +1171,11 @@ void triggersetmode_loop() {
           if (trigger_voltage < TRIGGER_MIN_VOLTAGE) trigger_voltage = TRIGGER_MIN_VOLTAGE;
         } else if (dispmode == DISP_CURRENT) {
           if (trigger_current == UINT16_MAX) {
-            trigger_current = TRIGGER_MAX_CURRNT;
+            trigger_current = TRIGGER_MAX_CURRENT;
           } else {
             trigger_current -= STEP_CURRENT_SHORT;
           }
-          if (trigger_current < TRIGGER_MIN_CURRNT) trigger_current = TRIGGER_MIN_CURRNT;
+          if (trigger_current < TRIGGER_MIN_CURRENT) trigger_current = TRIGGER_MIN_CURRENT;
         }
         break;
       case BUTTON_DOWN_LONG_HOLD:
@@ -1180,11 +1184,11 @@ void triggersetmode_loop() {
           if (trigger_voltage < TRIGGER_MIN_VOLTAGE) trigger_voltage = TRIGGER_MIN_VOLTAGE;
         } else if (dispmode == DISP_CURRENT && countflag) {
           if (trigger_current == UINT16_MAX) {
-            trigger_current = TRIGGER_MAX_CURRNT;
+            trigger_current = TRIGGER_MAX_CURRENT;
           } else {
             trigger_current -= STEP_CURRENT_LONG;
           }
-          if (trigger_current < TRIGGER_MIN_CURRNT) trigger_current = TRIGGER_MIN_CURRNT;
+          if (trigger_current < TRIGGER_MIN_CURRENT) trigger_current = TRIGGER_MIN_CURRENT;
         }
         countflag = false;
         break;
@@ -1194,7 +1198,7 @@ void triggersetmode_loop() {
           if (trigger_voltage > TRIGGER_MAX_VOLTAGE) trigger_voltage = TRIGGER_MAX_VOLTAGE;
         } else if (dispmode == DISP_CURRENT) {
           trigger_current += STEP_CURRENT_SHORT;
-          if (trigger_current > TRIGGER_MAX_CURRNT) trigger_current = UINT16_MAX;
+          if (trigger_current > TRIGGER_MAX_CURRENT) trigger_current = UINT16_MAX;
         }
         break;
       case BUTTON_UP_LONG_HOLD:
@@ -1203,7 +1207,7 @@ void triggersetmode_loop() {
           if (trigger_voltage > TRIGGER_MAX_VOLTAGE) trigger_voltage = TRIGGER_MAX_VOLTAGE;
         } else if (dispmode == DISP_CURRENT && countflag) {
           trigger_current += STEP_CURRENT_LONG;
-          if (trigger_current > TRIGGER_MAX_CURRNT) trigger_current = UINT16_MAX;
+          if (trigger_current > TRIGGER_MAX_CURRENT) trigger_current = UINT16_MAX;
         }
         countflag = false;
         break;
@@ -1219,7 +1223,7 @@ void triggersetmode_loop() {
         break;
       case BUTTON_OP_SHORT:
         if (TRIGGER_MIN_VOLTAGE <= trigger_voltage && trigger_voltage <= TRIGGER_MAX_VOLTAGE && 
-        ((TRIGGER_MIN_CURRNT <= trigger_current && trigger_current <= TRIGGER_MAX_CURRNT) || trigger_current == UINT16_MAX)) {
+        ((TRIGGER_MIN_CURRENT <= trigger_current && trigger_current <= TRIGGER_MAX_CURRENT) || trigger_current == UINT16_MAX)) {
           if (writeCoeff()) {
             DLY_ms(100);
             if (readTrigger()) {
