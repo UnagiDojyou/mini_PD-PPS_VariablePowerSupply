@@ -883,7 +883,7 @@ void calmode() {
     SEG_driver();
   } while (!BUTTON_IS_SHORT(count));
   sum = 0;
-  for (int i = 0; i < MAXCOUNT; i++) {
+  for (uint8_t i = 0; i < MAXCOUNT; i++) {
     ADC_input(PIN_V_ADC);
     DLY_ms(1);
     sum += ADC_read();
@@ -901,12 +901,12 @@ void calmode() {
     SEG_driver();
   } while (!BUTTON_IS_SHORT(count));
   sum = 0;
-  for (int i = 0; i < MAXCOUNT; i++) {
+  for (uint8_t i = 0; i < MAXCOUNT; i++) {
     ADC_input(PIN_V_ADC);
     DLY_ms(1);
     sum += ADC_read();
   }
-  aveV2 = (sum / MAXCOUNT) * 100;
+  aveV2 = (100 * sum) / MAXCOUNT;
 
   // calivration 0.00A
   PIN_low(PIN_ONOFF);
@@ -914,7 +914,7 @@ void calmode() {
   PIN_low(PIN_CV);
   PIN_high(PIN_CC);
   sum = 0;
-  for (int i = 0; i < MAXCOUNT; i++) { // automatically done
+  for (uint8_t i = 0; i < MAXCOUNT; i++) { // automatically done
     ADC_input(PIN_I_ADC);
     DLY_ms(1);
     sum += ADC_read();
@@ -932,7 +932,7 @@ void calmode() {
     SEG_driver();
   } while (!BUTTON_IS_SHORT(count));
   sum = 0;
-  for (int i = 0; i < MAXCOUNT; i++) {
+  for (uint8_t i = 0; i < MAXCOUNT; i++) {
     ADC_input(PIN_I_ADC);
     DLY_ms(1);
     sum += ADC_read();

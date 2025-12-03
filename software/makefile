@@ -19,7 +19,7 @@ LDSCRIPT = linker/ch32x035.ld
 CPUARCH  = -march=rv32imac -mabi=ilp32
 
 # Toolchain
-PREFIX   = riscv64-elf
+PREFIX   = riscv64-unknown-elf
 CC       = $(PREFIX)-gcc
 OBJCOPY  = $(PREFIX)-objcopy
 OBJDUMP  = $(PREFIX)-objdump
