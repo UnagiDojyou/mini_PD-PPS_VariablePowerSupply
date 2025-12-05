@@ -1,6 +1,6 @@
 // ===================================================================================
 // mini PD-PPS VariablePowerSupply firmware for V1,V2 board
-#define VERSION 930 // 0.93
+#define VERSION 920 // 0.92
 // Author: Unagi Dojyou
 // based on https://github.com/wagiminator
 // License: http://creativecommons.org/licenses/by-sa/3.0/
@@ -26,14 +26,9 @@
 #define DEBUG_SHUNT_R 20 // 20mΩ
 #define DEBUG_HIGH_R 12000 // 12kΩ
 #define DEBUG_LOW_R 1500 // 1.5kΩ
-#define DEBUG_DROP 200
 
 #define MAXCOUNT 200 // Proportional to the interval of voltage,ampar,watt update time
 #define LONGPUSH_SPEED 100 // supeed of long push down/up
-
-// LDO setting
-#define LDO_HYST 50 // mV LDO threshold hysteresis
-#define LDO_3V_MAX 3150 // mV. If Vdd is less than LDO_3V_MAX, the LDO output is determined to be 3.0V
 
 // PD setting
 #define KEEPTIME 40 // Prevents the reset after about 10 seconds
@@ -46,13 +41,10 @@
 #define FLASH_ADD_I_B (FLASH_ADD_I_A + 0x4)
 #define FLASH_ADD_TRIGGER_V (FLASH_ADD_I_B + 0x4)
 #define FLASH_ADD_TRIGGER_I (FLASH_ADD_TRIGGER_V + 0x4)
-#define FLASH_ADD_OUTPUT_LDO (FLASH_ADD_TRIGGER_I + 0x4)
-#define FLASH_ADD_DROP_LDO (FLASH_ADD_OUTPUT_LDO + 0x4)
-#define FLASH_ADD_END FLASH_ADD_DROP_LDO
+#define FLASH_ADD_END FLASH_ADD_TRIGGER_I
 
 // calibration setting
-#define CALV1 6000 // calibration at 6V
-#define CALV1_3V 5000 // calibration at 5V for 3.0V LDO
+#define CALV1 5000 // calibration at 5V
 #define CALV2 18000 // calibration at 18V
 #define CALA1 0 // calibration at 0A
 #define CALA2 3000 // calibration at 3A
@@ -127,10 +119,6 @@ uint32_t coeffv_a = 0;
 int32_t coeffv_b = 0;
 uint32_t coeffi_a = 0;
 int32_t coeffi_b = 0;
-uint32_t output_LDO = 0;
-uint32_t drop_LDO = 0;
-uint16_t mes_Vdd = 0;
-bool under_LDO = true;
 int32_t mes_Voltage = 0;
 int32_t mes_Current = 0;
 uint32_t sum_Voltage = 0;
@@ -157,13 +145,7 @@ bool readCoeff() {
   coeffv_b = (int32_t)FLASH_read4Byte(FLASH_ADD_V_B);
   coeffi_a = FLASH_read4Byte(FLASH_ADD_I_A);
   coeffi_b = (int32_t)FLASH_read4Byte(FLASH_ADD_I_B);
-  output_LDO = FLASH_read4Byte(FLASH_ADD_OUTPUT_LDO);
-  drop_LDO = FLASH_read4Byte(FLASH_ADD_DROP_LDO);
-  // if (output_LDO == 0xFFFFFFFF && drop_LDO == 0xFFFFFFFF) { // Compatibility for under version 0.92
-  //   output_LDO = LDO_HYST;
-  //   drop_LDO = 0;
-  // }
-  return !(coeffv_a == 0xFFFFFFFF || coeffv_b == 0xFFFFFFFF || coeffi_a == 0xFFFFFFFF || coeffi_b == 0xFFFFFFFF || coeffv_a == 0 || coeffi_a == 0 || output_LDO == 0xFFFFFFFF || drop_LDO == 0xFFFFFFFF || output_LDO == 0 || drop_LDO == 0);
+  return !(coeffv_a == 0xFFFFFFFF || coeffv_b == 0xFFFFFFFF || coeffi_a == 0xFFFFFFFF || coeffi_b == 0xFFFFFFFF || coeffv_a == 0 || coeffi_a == 0);
 }
 
 // Read trigger voltage and current to judge trigger mode
@@ -188,7 +170,7 @@ bool writeCoeff() {
   if (!FLASH_erasePage(FLASH_ADD_START)) {
     return false;
   }
-  uint32_t message[8] = {coeffv_a, coeffv_b, coeffi_a, coeffi_b, trigger_voltage, trigger_current, output_LDO, drop_LDO};
+  uint32_t message[8] = {coeffv_a, coeffv_b, coeffi_a, coeffi_b, trigger_voltage, trigger_current, UINT32_MAX, UINT32_MAX};
   if (!FLASH_write32Byte(FLASH_ADD_START, message)) {
     return false;
   }
@@ -209,8 +191,6 @@ bool selectCalMode() {
     coeffv_b = 0;
     coeffi_a = (1000 * DEBUG_VDD) / ((DEBUG_SHUNT_R * 4095) / 1000);
     coeffi_b = 0;
-    output_LDO = DEBUG_VDD;
-    drop_LDO = DEBUG_DROP;
     #endif
   }
 
@@ -257,12 +237,6 @@ void mesureVA() {
   ADC_input(PIN_V_ADC);
   ADC_read();
   mes_Voltage = (ADC_read() * coeffv_a) / 1000 + coeffv_b / 1000;
-  ADC_read_VDD();
-  mes_Vdd = ADC_read_VDD();
-  if (mes_Vdd < (output_LDO - LDO_HYST)) {
-    under_LDO = true;
-    mes_Voltage = mes_Vdd + drop_LDO;
-  }
 #ifndef DEBUG
   if (mes_Voltage >= set_Voltage + LIMIT_VOLTAGE) { // stop over voltage
     if (output) {
@@ -277,11 +251,7 @@ void mesureVA() {
   ADC_input(PIN_I_ADC);
   DLY_ms(1);
   ADC_read();
-  if (!under_LDO) {
-    mes_Current = (ADC_read() * coeffi_a) / 1000 + coeffi_b / 1000;
-  } else {
-    mes_Current = (((ADC_read() * output_LDO) / mes_Vdd) * coeffi_a) / 1000 + coeffi_b / 1000;
-  }
+  mes_Current = (ADC_read() * coeffi_a) / 1000 + coeffi_b / 1000;
 #ifndef DEBUG
   if (mes_Current > set_Current + LIMIT_CURRENT) { // stop over current
     if (output) {
@@ -293,6 +263,8 @@ void mesureVA() {
 #endif
   if (mes_Current < 0) mes_Current = 0;
   sum_Current += mes_Current;
+  ADC_input(PIN_V_ADC);
+  ADC_read();
 }
 
 void manageOnOff() {
@@ -904,11 +876,9 @@ void calmode() {
   uint32_t aveV2 = 0;
   uint32_t aveA1 = 0;
   uint32_t aveA2 = 0;
-  bool threeV = false;
-  uint16_t cal_v1 = 0;
 
-  // calivration 18.00V
-  SEG_setNumber(CALV2,false);
+  // calivration 5.00V
+  SEG_setNumber(CALV1, false);
   PIN_output(PIN_CVCC);
   PIN_low(PIN_CVCC);
   PIN_high(PIN_ONOFF);
@@ -923,25 +893,10 @@ void calmode() {
     DLY_ms(1);
     sum += ADC_read();
   }
-  aveV2 = (100 * sum) / MAXCOUNT;
+  aveV1 = (100 * sum) / MAXCOUNT;
 
-  // calivration LDO output @18V
-  sum = 0;
-  for (uint8_t i = 0; i < MAXCOUNT; i++) { // automatically done
-    DLY_ms(1);
-    sum += ADC_read_VDD();
-  }
-  output_LDO = sum / MAXCOUNT;
-  if (output_LDO < LDO_3V_MAX) {
-    threeV = true;
-    cal_v1 = CALV1_3V;
-  } else {
-    threeV = false;
-    cal_v1 = CALV1;
-  }
-
-  // calivration 5.00V or 6.00V
-  SEG_setNumber(cal_v1, false);
+  // calivration 18.00V
+  SEG_setNumber(CALV2, false);
   do {
     count = BUTTON_read();
     DLY_ms(1);
@@ -953,27 +908,10 @@ void calmode() {
     DLY_ms(1);
     sum += ADC_read();
   }
-  aveV1 = (100 * sum) / MAXCOUNT;
-
-  if (!threeV) {
-    // calivration 3.3V for LDO drop
-    SEG_setNumber(TRIGGER_MIN_VOLTAGE, false);
-    do {
-      count = BUTTON_read();
-      DLY_ms(1);
-      SEG_driver();
-    } while (!BUTTON_IS_SHORT(count));
-    sum = 0;
-    for (uint8_t i = 0; i < MAXCOUNT; i++) {
-      ADC_input(PIN_V_ADC);
-      DLY_ms(1);
-      sum += (TRIGGER_MIN_VOLTAGE - ADC_read_VDD());
-    }
-    drop_LDO = sum / MAXCOUNT;
-  }
+  aveV2 = (100 * sum) / MAXCOUNT;
 
   // calivration 0.00A
-  SEG_setNumber(CALA1,false);
+  SEG_setNumber(CALA1, false);
   sum = 0;
   for (uint8_t i = 0; i < MAXCOUNT; i++) { // automatically done
     ADC_input(PIN_I_ADC);
@@ -983,7 +921,7 @@ void calmode() {
   aveA1 = (100 * sum) / MAXCOUNT;
 
   // calivration 3.00A
-  SEG_setNumber(CALA2,false);
+  SEG_setNumber(CALA2, false);
   PIN_high(PIN_CVCC);
   do {
     count = BUTTON_read();
@@ -999,7 +937,7 @@ void calmode() {
   aveA2 = (sum / MAXCOUNT) * 100;
   PIN_low(PIN_ONOFF);
 
-  coeffv_a = (1000 * 100 * (CALV2 - cal_v1)) / (aveV2 - aveV1);
+  coeffv_a = (1000 * 100 * (CALV2 - CALV1)) / (aveV2 - aveV1);
   coeffv_b = 1000 * CALV2 - ((coeffv_a * aveV2) / 100);
   coeffi_a = (1000 * 100 * (CALA2 - CALA1)) / (aveA2 - aveA1);
   coeffi_b = 1000 * CALA1 - ((coeffi_a * aveA1) / 100);
@@ -1015,23 +953,6 @@ void calmode() {
   
   SEG_setNumber(coeffi_a,false);
   PIN_high(PIN_CVCC);
-  do {
-    count = BUTTON_read();
-    DLY_ms(1);
-    SEG_driver();
-  } while (!BUTTON_IS_SHORT(count));
-
-  // debug
-  SEG_setNumber(output_LDO, false);
-  PIN_low(PIN_CVCC);
-  do {
-    count = BUTTON_read();
-    DLY_ms(1);
-    SEG_driver();
-  } while (!BUTTON_IS_SHORT(count));
-
-  SEG_setNumber(drop_LDO * 10, false);
-  PIN_low(PIN_CVCC);
   do {
     count = BUTTON_read();
     DLY_ms(1);
