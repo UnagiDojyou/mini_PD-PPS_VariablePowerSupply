@@ -22,8 +22,8 @@
 // if DEBUG is defined, calibration is disaled.
 // #define DEBUG
 
-#define DEBUG_VDD 5000 // 5V
-#define DEBUG_SHUNT_R 20 // 20mΩ
+#define DEBUG_VDD 3000 // 3V
+#define DEBUG_SHUNT_R 10 // 10mΩ
 #define DEBUG_HIGH_R 12000 // 12kΩ
 #define DEBUG_LOW_R 1500 // 1.5kΩ
 

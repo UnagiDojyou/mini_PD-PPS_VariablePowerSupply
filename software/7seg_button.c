@@ -197,7 +197,7 @@ void SEG_setNumber(uint32_t num, bool fix100m) {
 }
 
 static uint8_t SEG_driving = PIN_SEG_A1;
-// 7seg driver
+// 7seg driver A1->A1->A3->A1->...
 void SEG_driver() {
   switch (SEG_driving) {
     case PIN_SEG_A3: // now Right,next is Left
@@ -234,84 +234,88 @@ void SEG_driver() {
 // ===================================================================================
 // button
 // ===================================================================================
-static uint8_t BUTTON_pushed = 0; // last pushed button. 0 = none
-static uint8_t BUTTON_pushing = 0;
+static uint8_t BUTTON_pushed = BUTTON_NON; // last pushed button. 0 = none
+static bool BUTTON_list[3];
+static uint8_t BUTTON_pushing = BUTTON_NON;
 static uint16_t BUTTON_count = 0; // how long button is pressed
 bool button_sampled = false; // if any button is pushed ,be true
 // short push return Normal,long pushing return *10,release after long press retun *10+
 uint8_t BUTTON_read() {
   // read button
-  if(PIN_read(PIN_BUTTON)){ // HIGH
-    if(!button_sampled && SEG_driving == PIN_SEG_A2){ // when SEG_A1 was low and SEG_A2 is high
-      BUTTON_pushing = BUTTON_OP_SHORT;
-    }else if(SEG_driving == PIN_SEG_A3 && BUTTON_pushing == 0 && button_sampled){ // always high
-      BUTTON_pushing = BUTTON_DOWN_SHORT;
-    }
-    button_sampled = true;
-  }else if(button_sampled){
-    switch(SEG_driving){
-      case PIN_SEG_A1:
-        // none
-        break;
-      case PIN_SEG_A2:
-        BUTTON_pushing = BUTTON_CVCC_SHORT;
-        break;
-      case PIN_SEG_A3:
-        if(BUTTON_pushing == 0){
-          BUTTON_pushing = BUTTON_UP_SHORT;
-        }else{ // double press?
-          button_sampled = false;
-          BUTTON_pushing = 0;
-        }
-        break;
-      default:
-        break;
-    }
-  }else{ // released
-    button_sampled = false;
-    BUTTON_pushing = 0;
+  switch (SEG_driving) {
+    case PIN_SEG_A1:
+      BUTTON_list[0] = PIN_read(PIN_BUTTON);
+      break;
+    case PIN_SEG_A2:
+      BUTTON_list[1] = PIN_read(PIN_BUTTON);
+      break;
+    case PIN_SEG_A3:
+      BUTTON_list[2] = PIN_read(PIN_BUTTON);
+      break;
   }
+  
+  // judge which switch is pushed
+  if (SEG_driving == PIN_SEG_A3) {
+    if (BUTTON_list[0] && BUTTON_list[1] && BUTTON_list[2]) {
+      BUTTON_pushing = BUTTON_DOWN_SHORT;
+      button_sampled = true;
+    } else if (!BUTTON_list[0] && BUTTON_list[1] && BUTTON_list[2]) {
+      BUTTON_pushing = BUTTON_OP_SHORT;
+      button_sampled = true;
+    } else if (BUTTON_list[0] && !BUTTON_list[1] && BUTTON_list[2]) {
+      BUTTON_pushing = BUTTON_CVCC_SHORT;
+      button_sampled = true;
+    } else if (BUTTON_list[0] && BUTTON_list[1] && !BUTTON_list[2]) {
+      BUTTON_pushing = BUTTON_UP_SHORT;
+      button_sampled = true;
+    } else if (!BUTTON_list[0] && !BUTTON_list[1] && !BUTTON_list[2]) {
+      BUTTON_pushing = BUTTON_NON;
+      button_sampled = false;
+    } else { // more than two button is pushed or transition state
+      BUTTON_pushing = BUTTON_ANY;
+      button_sampled = false;
+    }
 
-  // count and reset
-  if(SEG_driving == PIN_SEG_A3){
+    // count and reset
     if(button_sampled){ // any button was pushed
       if(BUTTON_pushing == BUTTON_pushed){ // button is pushed
         BUTTON_count++;
         if(BUTTON_count > BUTTON_LONGCOUNT){
-          BUTTON_pushing = 0;
+          BUTTON_pushing = BUTTON_NON;
           button_sampled = false;
           return BUTTON_LONG_HOLD(BUTTON_pushed); // long pressing
         }
-      }else{ // pushed button is changed or pressed
+      } else if (BUTTON_pushed == BUTTON_NON) { // start pushed
         BUTTON_count = 1;
         BUTTON_pushed = BUTTON_pushing;
+      }else{ // pushed button is changed
+        if (BUTTON_pushing == BUTTON_DOWN_SHORT) { // UP->DOWN
+          BUTTON_pushed = BUTTON_DOWN_SHORT;
+        }
       }
-    }else if(BUTTON_pushed > 0){ // button is relased
+    }else if(BUTTON_pushed){ // button is relased
       if(BUTTON_count > BUTTON_LONGCOUNT){
         BUTTON_count = 0;
         BUTTON_pushing = BUTTON_pushed; // temp
-        BUTTON_pushed = 0;
-        button_sampled = false;
+        BUTTON_pushed = BUTTON_NON;
         return BUTTON_LONG_RELEASE(BUTTON_pushing); // relase after long press
-      }else if(BUTTON_count > BUTTON_SHORTCOUNT){
+      }else if(BUTTON_count > BUTTON_SHORTCOUNT){ // relase after short press
         BUTTON_count = 0;
         BUTTON_pushing = BUTTON_pushed;
-        BUTTON_pushed = 0;
-        button_sampled = false;
+        BUTTON_pushed = BUTTON_NON;
         return BUTTON_pushing; // short pushed
       }else{ // chattering
-        BUTTON_pushed = 0;
+        BUTTON_pushed = BUTTON_NON;
         BUTTON_count = 0;
       }
     }else{ // no button is pushed
-      BUTTON_pushed = 0;
       BUTTON_count = 0;
-      return 0;
+      return BUTTON_NON;
     }
     // reset
-    BUTTON_pushing = 0;
+    BUTTON_pushing = BUTTON_NON;
     button_sampled = false;
-    return 0;
+    return BUTTON_NON;
   }
   return 255;
 }
