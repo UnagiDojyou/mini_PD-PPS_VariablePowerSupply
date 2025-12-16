@@ -1,13 +1,12 @@
 // ===================================================================================
 // mini PD-PPS VariablePowerSupply firmware for V1,V2 board
-#define VERSION 920 // 0.92
+#define VERSION 930 // 0.93
 // Author: Unagi Dojyou
 // based on https://github.com/wagiminator
 // License: http://creativecommons.org/licenses/by-sa/3.0/
 // ===================================================================================
 #include <config.h>             // user configurations
 #include <system.h>             // system functions
-#include <debug_serial.h>       // serial debug functions
 #include <gpio.h>               // GPIO functions
 #include <usbpd_sink.h>         // USB PD sink functions
 #include <flash_rom.h>          // flash rom functions
@@ -23,7 +22,7 @@
 // #define DEBUG
 
 #define DEBUG_VDD 3000 // 3V
-#define DEBUG_SHUNT_R 10 // 10mΩ
+#define DEBUG_SHUNT_R 100 // 100mΩ
 #define DEBUG_HIGH_R 12000 // 12kΩ
 #define DEBUG_LOW_R 1500 // 1.5kΩ
 
@@ -32,6 +31,19 @@
 
 // PD setting
 #define KEEPTIME 40 // Prevents the reset after about 10 seconds
+
+// Board Electrical Maximum
+#define MIN_VIN 3100 // 3.1V, LDO and CH32X035 limit
+#define MAX_VIN 24000 // 24V, Zener diode limit
+#define INRUSH_TIME 10 // 10ms
+#define MAX_IOUT_PULSE 10000 // 10A, 10ms Pulse Current Limit, AO3400 limit
+#define MAX_IOUT_CONTI 2500 // 2.5A, Continuous Current Limit, Temperature Limit
+
+// over current protection
+#define LIMIT_CURRENT 500 // set_current + 500mA
+
+// over voltage protection
+#define LIMIT_VOLTAGE 1000 // set_voltage + 1V
 
 // flash addr
 #define FLASH_ADD_START 0x800BF00 // page192
@@ -47,24 +59,25 @@
 #define CALV1 5000 // calibration at 5V
 #define CALV2 18000 // calibration at 18V
 #define CALA1 0 // calibration at 0A
-#define CALA2 3000 // calibration at 3A
+#define CALA2 2000 // calibration at 2A
 
 // define PPS
 #define PPS_MIN_CURRENT 500 // 500mA
-#define PPS_MAX_CURRENT 3000 // 3A
+#define PPS_MAX_CURRENT (MAX_IOUT_CONTI - LIMIT_CURRENT)
+#define PPS_MIN_VOLTAGE MIN_VIN
+#define PPS_MAX_VOLTAGE (MAX_VIN - LIMIT_VOLTAGE)
 #define PPS_DEFAULT_VOLTAGE 5000 // 5V
 #define FIX_DEFAULT_VOLTAGE 5000 // 5V
+#define FIX_MIN_VOLTAGE MIN_VIN
+#define FIX_MAX_VOLTAGE (MAX_VIN - LIMIT_VOLTAGE)
+#define FIX_MAX_CURRENT (MAX_IOUT_CONTI - LIMIT_CURRENT)
 #define TRIGGER_MAX_VOLTAGE 21000 // 21V
 #define TRIGGER_MIN_VOLTAGE 3300 // 3.3V
 #define TRIGGER_MIN_CURRENT PPS_MIN_CURRENT
-#define TRIGGER_MAX_CURRENT PPS_MAX_CURRENT
+#define TRIGGER_MAX_CURRENT (MAX_IOUT_CONTI - LIMIT_CURRENT) // 2A
 
-// over current protection
-#define LIMIT_CURRENT 500 // set_current + 500mA
-#define LIMIT_FIVE_CURRENT 2400 // USB BC1.2 max Current is 1500mA
-
-// over voltage protection
-#define LIMIT_VOLTAGE 1000 // set_voltage + 1V
+// define
+#define LIMIT_FIVE_CURRENT (MAX_IOUT_CONTI - LIMIT_CURRENT) // USB BC1.2 max Current is 1500mA
 
 // Amount of change at one time
 #define STEP_VOLTAGE_SHORT 100 // 100mV/(one button push)
@@ -133,9 +146,10 @@ uint32_t Voltage = 0;
 uint32_t Current = 0;
 uint8_t pdonum = 0;
 uint8_t dispmode = DISP_VOLTAGE;
-bool invalid_voltage = true;
+bool invalid_pd = true;
 bool output = false; // OFF
 uint16_t count = 0; // while counter
+uint8_t inrush_count = 0;
 uint32_t trigger_voltage = 0;
 uint32_t trigger_current = 0;
 
@@ -231,6 +245,13 @@ void selectStartMode() {
   }
 }
 
+void protectionVA() {
+  if (output) {
+    output = false;
+    PIN_low(PIN_ONOFF);
+  }
+}
+
 // read ADC and check over Voltage and Current
 void mesureVA() {
   // measure Voltage and Current
@@ -238,12 +259,8 @@ void mesureVA() {
   ADC_read();
   mes_Voltage = (ADC_read() * coeffv_a) / 1000 + coeffv_b / 1000;
 #ifndef DEBUG
-  if (mes_Voltage >= set_Voltage + LIMIT_VOLTAGE) { // stop over voltage
-    if (output) {
-      output = false;
-      PIN_low(PIN_ONOFF);
-      invalid_voltage = true;
-    }
+  if (mes_Voltage > set_Voltage + LIMIT_VOLTAGE) { // stop over voltage
+    protectionVA();
   }
 #endif
   if (mes_Voltage < 0) mes_Voltage = 0;
@@ -253,12 +270,16 @@ void mesureVA() {
   ADC_read();
   mes_Current = (ADC_read() * coeffi_a) / 1000 + coeffi_b / 1000;
 #ifndef DEBUG
-  if (mes_Current > set_Current + LIMIT_CURRENT) { // stop over current
-    if (output) {
-      output = false;
-      PIN_low(PIN_ONOFF);
-      invalid_voltage = true;
+  if (mes_Current > MAX_IOUT_PULSE) { // over pulse current limit
+    protectionVA();
+  } else if (mes_Current > set_Current + LIMIT_CURRENT) { // over continuous current limit
+    if (mode == MODE_PPS || inrush_count >= INRUSH_TIME) { // check mode
+      protectionVA();
+    } else {
+      inrush_count++;
     }
+  } else { // normal
+    inrush_count = 0;
   }
 #endif
   if (mes_Current < 0) mes_Current = 0;
@@ -269,17 +290,17 @@ void mesureVA() {
 
 void manageOnOff() {
   if (mode == MODE_PPS) {
-    if (!PIN_read(PIN_ONOFF) && output && !invalid_voltage) { // OFF -> ON
+    if (!PIN_read(PIN_ONOFF) && output && !invalid_pd) { // OFF -> ON
       PIN_high(PIN_ONOFF);
-      invalid_voltage = !PD_setPPS(set_Voltage, set_Current);
+      invalid_pd = !PD_setPPS(set_Voltage, set_Current);
     } else if (PIN_read(PIN_ONOFF) && !output) { // ON -> OFF
       PIN_low(PIN_ONOFF);
-      invalid_voltage = !PD_setPPS(min_Voltage, set_Current);
+      invalid_pd = !PD_setPPS(min_Voltage, set_Current);
     }
-    if ((set_Voltage != PD_getVoltage() || set_Current != PD_getCurrent()) && output && !invalid_voltage) {
-      invalid_voltage = !PD_setPPS(set_Voltage, set_Current);
+    if ((set_Voltage != PD_getVoltage() || set_Current != PD_getCurrent()) && output && !invalid_pd) {
+      invalid_pd = !PD_setPPS(set_Voltage, set_Current);
     }
-  } else if (output && !invalid_voltage) {
+  } else if (output && !invalid_pd) {
     PIN_high(PIN_ONOFF);
   } else {
     PIN_low(PIN_ONOFF);
@@ -505,14 +526,22 @@ void ppsmode_setup() {
   for (uint8_t i = 1; i <= PD_getPDONum(); i++) {
     if (i <= PD_getFixedNum());
     else if (max_Voltage < PD_getPDOMaxVoltage(i)) { // select more high voltage
-      set_Voltage = PPS_DEFAULT_VOLTAGE;
-      min_Voltage = PD_getPDOMinVoltage(i);
-      max_Voltage = PD_getPDOMaxVoltage(i);
-      if (PD_getPDOMaxCurrent(i) < PPS_MAX_CURRENT) {
+      if (PD_getPDOMaxCurrent(i) <= PPS_MAX_CURRENT) { // set Max Current
         max_Current = PD_getPDOMaxCurrent(i);
       } else {
         max_Current = PPS_MAX_CURRENT;
       }
+      if (PD_getPDOMinVoltage(i) >= PPS_MIN_VOLTAGE) { // set Min Voltage
+        min_Voltage = PD_getPDOMinVoltage(i);
+      } else {
+        min_Voltage = PPS_MIN_VOLTAGE;
+      }
+      if (PD_getPDOMaxVoltage(i) <= PPS_MAX_VOLTAGE) { // set Max Voltage
+        max_Voltage = PD_getPDOMaxVoltage(i);
+      } else {
+        max_Voltage = PPS_MAX_VOLTAGE;
+      }
+      set_Voltage = PPS_DEFAULT_VOLTAGE;
       set_Current = max_Current;
       min_Current = PPS_MIN_CURRENT;
       pdonum = i;
@@ -550,7 +579,7 @@ void ppsmode_setup() {
   count = 0;
   dispmode = DISP_VOLTAGE;
   output = false;
-  invalid_voltage = !PD_setPPS(min_Voltage, set_Current);
+  invalid_pd = !PD_setPPS(min_Voltage, min_Current);
 }
 
 
@@ -567,7 +596,7 @@ void ppsmode_loop() {
     count++;
 
     // Refresh disp
-    if (count > MAXCOUNT) {
+    if (count >= MAXCOUNT) {
       count = 0;
       countkeep++;
       countflag = true;
@@ -687,7 +716,7 @@ void ppsmode_loop() {
         if (output && dispmode < DISP_WATT) dispmode = DISP_WATT;
         break;
       case BUTTON_OP_SHORT:
-        if (!invalid_voltage) {
+        if (!invalid_pd) {
           output =! output;
         }
         break;
@@ -703,20 +732,26 @@ void ppsmode_loop() {
 void fixmode_setup() {
   // find pdo with FIX_DEFAULT_VOLTAGE
   pdonum = 1;
-  for (uint8_t i = 1; i <= PD_getFixedNum(); i++) {
+  for (uint8_t i = 1; i <= PD_getFixedNum(); i++) { // search start PDO
     if (PD_getPDOVoltage(i) == FIX_DEFAULT_VOLTAGE) {
       pdonum = i;
       break;
+    } else if (FIX_MIN_VOLTAGE <= PD_getPDOVoltage(i) && PD_getPDOVoltage(i) <= FIX_MAX_VOLTAGE && PD_getPDOVoltage(i) < PD_getPDOVoltage(pdonum)) {
+      pdonum = i;
     }
   }
   set_Voltage = PD_getPDOVoltage(pdonum);
-  set_Current = PD_getPDOMaxCurrent(pdonum);
+  if (PD_getPDOMaxCurrent(pdonum) <= FIX_MAX_CURRENT) {
+    set_Current = PD_getPDOMaxCurrent(pdonum);
+  } else {
+    set_Current = FIX_MAX_CURRENT;
+  }
 
   // init
   count = 0;
   dispmode = DISP_VOLTAGE;
   output = false;
-  invalid_voltage = !PD_setVoltage(set_Voltage);
+  invalid_pd = !PD_setVoltage(set_Voltage);
   PIN_output(PIN_CVCC);
   PIN_low(PIN_CVCC);
 }
@@ -728,7 +763,7 @@ void fixmode_loop() {
     manageDisp(set_Voltage, set_Current);
     mesureVA();
     count++;
-    if (count > MAXCOUNT) {
+    if (count >= MAXCOUNT) {
       count = 0;
       
       Voltage = (uint32_t)(sum_Voltage / MAXCOUNT);
@@ -748,9 +783,17 @@ void fixmode_loop() {
           PIN_low(PIN_ONOFF);
         } else if (pdonum > 1) {
           pdonum--;
-          set_Voltage = PD_getPDOVoltage(pdonum);
-          set_Current = PD_getPDOMaxCurrent(pdonum);
-          invalid_voltage = !PD_setVoltage(set_Voltage);
+          if (FIX_MIN_VOLTAGE <= PD_getPDOVoltage(pdonum) && PD_getPDOVoltage(pdonum) <= FIX_MAX_VOLTAGE) {
+            set_Voltage = PD_getPDOVoltage(pdonum);
+            if (PD_getPDOMaxCurrent(pdonum) <= FIX_MAX_CURRENT){
+              set_Current = PD_getPDOMaxCurrent(pdonum);
+            } else {
+              set_Current = FIX_MAX_CURRENT;
+            }
+            invalid_pd = !PD_setVoltage(set_Voltage);
+          } else {
+            pdonum++;
+          }
         }
         break;
       case BUTTON_UP_SHORT:
@@ -759,9 +802,17 @@ void fixmode_loop() {
           PIN_low(PIN_ONOFF);
         } else if (pdonum < PD_getFixedNum()) {
           pdonum++;
-          set_Voltage = PD_getPDOVoltage(pdonum);
-          set_Current = PD_getPDOMaxCurrent(pdonum);
-          invalid_voltage = !PD_setVoltage(set_Voltage);
+          if (FIX_MIN_VOLTAGE <= PD_getPDOVoltage(pdonum) && PD_getPDOVoltage(pdonum) <= FIX_MAX_VOLTAGE) {
+            set_Voltage = PD_getPDOVoltage(pdonum);
+            if (PD_getPDOMaxCurrent(pdonum) <= FIX_MAX_CURRENT){
+              set_Current = PD_getPDOMaxCurrent(pdonum);
+            } else {
+              set_Current = FIX_MAX_CURRENT;
+            }
+            invalid_pd = !PD_setVoltage(set_Voltage);
+          } else {
+            pdonum--;
+          }
         }
         break;
       case BUTTON_CVCC_SHORT:
@@ -781,7 +832,7 @@ void fixmode_loop() {
         if (output && dispmode < DISP_WATT) dispmode = DISP_WATT;
         break;
       case BUTTON_OP_SHORT:
-        if (!invalid_voltage) {
+        if (!invalid_pd) {
           output =! output;
         }
         break;
@@ -796,44 +847,32 @@ void fixmode_loop() {
 // ===================================================================================
 void fiveVmode() {
   dispmode = DISP_VOLTAGE;
-  output = false;
-
   count = 0;
   set_Voltage = 5000;
   set_Current = LIMIT_FIVE_CURRENT;
-  
-  // check voltage and output
-  invalid_voltage = false;
-  sum_Voltage = 0;
-  sum_Current = 0;
-  mesureVA();
-  output = true;
-  if (!invalid_voltage) {
-    PIN_high(PIN_ONOFF);
-    output = true;
-  } else {
-    return;
-  }
-  Voltage = sum_Voltage;
-  Current = sum_Current;
-  sum_Voltage = 0;
-  sum_Current = 0;
+  invalid_pd = false;
   PIN_output(PIN_CVCC);
   PIN_low(PIN_CVCC);
+  output = true;
 
   while (1) {
     manageOnOff();
     manageDisp(set_Voltage, set_Current);
     mesureVA();
-    if (invalid_voltage) return;
+    if (invalid_pd) return;
     count++;
-    if (count > MAXCOUNT) {
+    if (count >= MAXCOUNT) {
       count = 0;
       
       Voltage = (uint32_t)(sum_Voltage / MAXCOUNT);
       Current = (uint32_t)(sum_Current / MAXCOUNT);
       sum_Voltage = 0;
       sum_Current = 0;
+    }
+    if (!output) {
+      PIN_low(PIN_ONOFF);
+      PIN_input(PIN_CVCC);
+      return;
     }
 
     switch (BUTTON_read()) {
@@ -858,7 +897,7 @@ void fiveVmode() {
       case BUTTON_OP_SHORT:
         PIN_low(PIN_ONOFF);
         output = false;
-        PIN_output(PIN_CVCC);
+        PIN_input(PIN_CVCC);
         return;
       default:
         break;
@@ -920,7 +959,7 @@ void calmode() {
   }
   aveA1 = (100 * sum) / MAXCOUNT;
 
-  // calivration 3.00A
+  // calivration 2.00A
   SEG_setNumber(CALA2, false);
   PIN_high(PIN_CVCC);
   do {
@@ -1044,30 +1083,12 @@ void triggermode_setup() {
   }
 
   // init
-  count = 0;
   dispmode = DISP_VOLTAGE;
-  output = false;
+  count = 0;
+  invalid_pd = false;
   PIN_output(PIN_CVCC);
   PIN_low(PIN_CVCC);
-
-  // check voltage and output
-  invalid_voltage = false;
-  sum_Voltage = 0;
-  sum_Current = 0;
-  mesureVA();
   output = true;
-  if (!invalid_voltage) {
-    output = true;
-  } else {
-    while (1) {
-      SEG_driver();
-      DLY_ms(1);
-    }
-  }
-  Voltage = sum_Voltage;
-  Current = sum_Current;
-  sum_Voltage = 0;
-  sum_Current = 0;
 }
 
 void triggermode_loop() {
@@ -1080,7 +1101,7 @@ void triggermode_loop() {
     count++;
 
     // Refresh disp
-    if (count > MAXCOUNT) {
+    if (count >= MAXCOUNT) {
       count = 0;
       
       Voltage = (uint32_t)(sum_Voltage / MAXCOUNT);
