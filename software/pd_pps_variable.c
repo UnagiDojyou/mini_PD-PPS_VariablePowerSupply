@@ -18,6 +18,12 @@
 // configuration
 // ===================================================================================
 
+// if MOSFET is not placed, enable this define
+// #define DISABLE_MOSFET
+
+// if SHUNT Registor is not placed, enable this define
+// #define DISABLE_CURRENT
+
 // if DEBUG is defined, calibration is disaled.
 // #define DEBUG
 
@@ -33,11 +39,29 @@
 #define KEEPTIME 40 // Prevents the reset after about 10 seconds
 
 // Board Electrical Maximum
+#define INRUSH_TIME 10 // 10ms
+
+#if defined(DISABLE_CURRENT) && defined(DISABLE_MOSFET)
+#define MIN_VIN 5000 // 5V
+#define MAX_VIN 24000 // 24V, Zener diode limit
+#define MAX_IOUT_PULSE 30000 // 30A, 10ms Pulse Current Limit
+#define MAX_IOUT_CONTI 6000 // 6A, Continuous Current Limit, Temperature Limit
+#elif defined(DISABLE_CURRENT)
 #define MIN_VIN 3100 // 3.1V, LDO and CH32X035 limit
 #define MAX_VIN 24000 // 24V, Zener diode limit
-#define INRUSH_TIME 10 // 10ms
+#define MAX_IOUT_PULSE 10000 // 10A, 10ms Pulse Current Limit, AO3400 limit
+#define MAX_IOUT_CONTI 3500 // 3.5A, Continuous Current Limit, AO3400 limit
+#elif defined(DISABLE_MOSFET)
+#define MIN_VIN 5000 // 5V
+#define MAX_VIN 24000 // 24V, Zener diode limit
+#define MAX_IOUT_PULSE 10000 // 10A, 10ms Pulse Current Limit
+#define MAX_IOUT_CONTI 3000 // 3.0A, Continuous Current Limit, Temperature Limit
+#else // normal
+#define MIN_VIN 3100 // 3.1V, LDO and CH32X035 limit
+#define MAX_VIN 24000 // 24V, Zener diode limit
 #define MAX_IOUT_PULSE 10000 // 10A, 10ms Pulse Current Limit, AO3400 limit
 #define MAX_IOUT_CONTI 2500 // 2.5A, Continuous Current Limit, Temperature Limit
+#endif
 
 // over current protection
 #define LIMIT_CURRENT 500 // set_current + 500mA
@@ -72,9 +96,17 @@
 #define FIX_MAX_VOLTAGE (MAX_VIN - LIMIT_VOLTAGE)
 #define FIX_MAX_CURRENT (MAX_IOUT_CONTI - LIMIT_CURRENT)
 #define TRIGGER_MAX_VOLTAGE 21000 // 21V
+#if MIN_VIN > 3300
+#define TRIGGER_MIN_VOLTAGE 5000 // 5.0V
+#else
 #define TRIGGER_MIN_VOLTAGE 3300 // 3.3V
+#endif
 #define TRIGGER_MIN_CURRENT PPS_MIN_CURRENT
-#define TRIGGER_MAX_CURRENT (MAX_IOUT_CONTI - LIMIT_CURRENT) // 2A
+#if (MAX_IOUT_CONTI - LIMIT_CURRENT) < 5000
+#define TRIGGER_MAX_CURRENT (MAX_IOUT_CONTI - LIMIT_CURRENT)
+#else
+#define TRIGGER_MAX_CURRENT 5000 // 5A
+#endif
 
 // define
 #define LIMIT_FIVE_CURRENT (MAX_IOUT_CONTI - LIMIT_CURRENT) // USB BC1.2 max Current is 1500mA
@@ -159,7 +191,7 @@ bool readCoeff() {
   coeffv_b = (int32_t)FLASH_read4Byte(FLASH_ADD_V_B);
   coeffi_a = FLASH_read4Byte(FLASH_ADD_I_A);
   coeffi_b = (int32_t)FLASH_read4Byte(FLASH_ADD_I_B);
-  return !(coeffv_a == 0xFFFFFFFF || coeffv_b == 0xFFFFFFFF || coeffi_a == 0xFFFFFFFF || coeffi_b == 0xFFFFFFFF || coeffv_a == 0 || coeffi_a == 0);
+  return !(coeffv_a == 0xFFFFFFFF || coeffv_b == 0xFFFFFFFF || coeffi_a == 0xFFFFFFFF || coeffi_b == 0xFFFFFFFF || coeffv_a == 0);
 }
 
 // Read trigger voltage and current to judge trigger mode
@@ -231,6 +263,17 @@ bool selectCalMode() {
 }
 
 // select mode
+#ifdef DISABLE_MOSFET
+void selectStartMode() {
+  if (selectCalMode()) {
+    mode = MODE_CAL;
+  } else if (readTrigger()) {
+    mode = MODE_TRG;
+  } else {
+    mode = MODE_SETTRG;
+  }
+}
+#else
 void selectStartMode() {
   if (selectCalMode()) {
     mode = MODE_CAL;
@@ -244,6 +287,7 @@ void selectStartMode() {
     mode = MODE_5V;
   }
 }
+#endif
 
 void protectionVA() {
   if (output) {
@@ -309,6 +353,11 @@ void manageOnOff() {
 
 void manageDisp(uint16_t disp_set_Voltage, uint16_t disp_set_Current) {
   if (output) { // ON
+#ifdef DISABLE_CURRENT
+    SEG_setNumber(Voltage, false);
+    PIN_low(PIN_CVCC);
+    dispmode = DISP_VOLTAGE;
+#else
     switch (dispmode) {
       case DISP_VOLTAGE:
         SEG_setNumber(Voltage, false);
@@ -323,6 +372,7 @@ void manageDisp(uint16_t disp_set_Voltage, uint16_t disp_set_Current) {
         PIN_toggle(PIN_CVCC);
         break;
     }
+#endif
   } else { // OFF
     switch (dispmode) {
       case DISP_CURRENT:
@@ -415,6 +465,11 @@ void mode_menu() {
   while(1) {
     SEG_driver();
     DLY_ms(1);
+
+    if (mode == MODE_SETTRG) {
+      triggersetmode_setup();
+      triggersetmode_loop();
+    }
 
     // set disp
     switch (mode_list[mode][menu_num]) {
@@ -949,6 +1004,7 @@ void calmode() {
   }
   aveV2 = (100 * sum) / MAXCOUNT;
 
+#ifndef DISABLE_CURRENT
   // calivration 0.00A
   SEG_setNumber(CALA1, false);
   sum = 0;
@@ -976,10 +1032,15 @@ void calmode() {
   aveA2 = (sum / MAXCOUNT) * 100;
   PIN_low(PIN_ONOFF);
 
-  coeffv_a = (1000 * 100 * (CALV2 - CALV1)) / (aveV2 - aveV1);
-  coeffv_b = 1000 * CALV2 - ((coeffv_a * aveV2) / 100);
   coeffi_a = (1000 * 100 * (CALA2 - CALA1)) / (aveA2 - aveA1);
   coeffi_b = 1000 * CALA1 - ((coeffi_a * aveA1) / 100);
+#else
+  coeffi_a = 0;
+  coeffi_b = 0;
+#endif
+
+  coeffv_a = (1000 * 100 * (CALV2 - CALV1)) / (aveV2 - aveV1);
+  coeffv_b = 1000 * CALV2 - ((coeffv_a * aveV2) / 100);
 
   // disp result
   SEG_setNumber(coeffv_a,false);
