@@ -1,5 +1,5 @@
 // ===================================================================================
-// USB PD SINK Handler for CH32X035                                           * v1.5 *
+// USB PD SINK Handler for CH32X035
 // ===================================================================================
 //
 // Functions available:
@@ -23,6 +23,7 @@
 //
 // Reference:               https://github.com/openwch/ch32x035
 // 2023 by Stefan Wagner:   https://github.com/wagiminator
+// 2025 by Unagi Dojyou:    https://unagidojyou.com
 
 #pragma once
 
@@ -84,6 +85,12 @@ typedef enum {
   CC_GET_SOURCE_CAP,
 } cc_state_t;
 
+// Request Types
+typedef enum {
+  REQ_FIXED = 0,
+  REQ_PPS,
+} pd_request_type_t;
+
 typedef struct {
   volatile cc_state_t CC_State;
   volatile cc_state_t CC_LastState;
@@ -99,7 +106,9 @@ typedef struct {
   volatile uint8_t    SetPDONum;
   volatile uint8_t    LastSetPDONum;
   volatile uint16_t   SetVoltage;
-  volatile uint16_t   SetCurrent; //modified by unagidojyou
+  volatile uint16_t   SetCurrent;
+  volatile pd_request_type_t SetRequestType; // Saved request type
+  volatile uint8_t    PDO_Mismatch;          // Flag if re-matching failed
   volatile uint16_t   LastSetVoltage;
   volatile uint8_t    USBPD_READY;
   volatile uint8_t    SourceMessageID;
@@ -113,6 +122,7 @@ typedef struct {
 // ===================================================================================
 uint8_t  PD_connect(void);                      // Initialize PD and connect
 uint8_t  PD_negotiate(void);                    // Negotiate current settings
+uint8_t  PD_Loop(void);                         // Main Loop function, handles Update and PPS Keep-Alive
 uint8_t  PD_setVoltage(uint16_t voltage);       // Set specified voltage (in millivolts)
 
 uint8_t  PD_setPPS(uint16_t voltage,uint16_t current); // Set specified voltage and current (in millivolts and milliampere)
@@ -129,8 +139,11 @@ uint16_t PD_getPDOMaxCurrent(uint8_t pdonum);   // Get max current of specified 
 uint8_t  PD_getPDO(void);                       // Get active PDO
 uint16_t PD_getVoltage(void);                   // Get active voltage
 uint16_t PD_getCurrent(void);                   // Get active Current
+uint8_t  PD_getMismatch(void);                  // Get mismatch flag
+void     PD_setMismatch(uint8_t mismatch);      // Set Capability Mismatch flag for next request
 
 uint8_t PD_setPDO(uint8_t pdonum, uint16_t voltage);  // Set specified PDO and voltage
+uint8_t PD_setPDOwithCurrent(uint8_t pdonum, uint16_t voltage ,uint16_t current); // Set specified PDO, Voltage and Current 
 
 void PD_PDO_request(void);                      //send RDO
 

@@ -1,9 +1,10 @@
 // ===================================================================================
-// USB PD SINK Handler for CH32X035                                           * v1.5 *
+// USB PD SINK Handler for CH32X035
 // ===================================================================================
 //
 // Reference:               https://github.com/openwch/ch32x035
 // 2023 by Stefan Wagner:   https://github.com/wagiminator
+// 2025 by Unagi Dojyou:    https://unagidojyou.com
 
 #include "usbpd_sink.h"
 
@@ -26,7 +27,7 @@ __attribute__ ((aligned(4))) uint8_t PD_SC_buffer[28];  // PD Source Cap buffer
 // ===================================================================================
 
 // Prototype
-void PD_update(void);
+uint8_t PD_update(void);
 
 // Negotiate current settings and wait until finished (return 1) or timeout (return 0)
 uint8_t PD_negotiate(void) {
@@ -89,6 +90,11 @@ uint8_t PD_setPDO(uint8_t pdonum, uint16_t voltage) {
   PD_control.SetPDONum  = pdonum;
   PD_control.SetVoltage = voltage;
   PD_control.SetCurrent = PD_getPDOMaxCurrent(pdonum); //modified by unagidojyou
+  if (pdonum <= (PD_control.SourcePDONum - PD_control.SourcePPSNum)) {
+    PD_control.SetRequestType = REQ_FIXED;
+  } else {
+    PD_control.SetRequestType = REQ_PPS;
+  }
   return PD_negotiate();
 }
 
@@ -112,20 +118,19 @@ uint8_t PD_setVoltage(uint16_t voltage) {
   return 0;
 }
 
-// ===================================================================================
-// add by unagidojyou
-// ===================================================================================
 // Set specified PDO and voltage; returns 0:failed, 1:success
 uint8_t PD_setPDOwithCurrent(uint8_t pdonum, uint16_t voltage ,uint16_t current) {
   PD_control.SetPDONum  = pdonum;
   PD_control.SetVoltage = voltage;
   PD_control.SetCurrent = current;
+  if (pdonum <= (PD_control.SourcePDONum - PD_control.SourcePPSNum)) {
+    PD_control.SetRequestType = REQ_FIXED;
+  } else {
+    PD_control.SetRequestType = REQ_PPS;
+  }
   return PD_negotiate();
 }
 
-// ===================================================================================
-// add by unagidojyou
-// ===================================================================================
 // Set specified voltage and current (in millivolts and milliampere) if available;
 // returns 0:failed, 1:success
 uint8_t PD_setPPS(uint16_t voltage,uint16_t current) {
@@ -153,12 +158,24 @@ uint16_t PD_getVoltage(void) {
   return PD_control.SetVoltage;
 }
 
-// ===================================================================================
-// add by unagidojyou
-// ===================================================================================
 // Get active Current
 uint16_t PD_getCurrent(void) {
   return PD_control.SetCurrent;
+}
+
+// Check if PD is ready
+uint8_t PD_isReady(void) {
+  return PD_control.USBPD_READY;
+}
+
+// Get PDO mismatch flag
+uint8_t PD_getMismatch(void) {
+  return PD_control.PDO_Mismatch;
+}
+
+// Set Capability Mismatch flag
+void PD_setMismatch(uint8_t mismatch) {
+  PD_control.PDO_Mismatch = mismatch ? 1 : 0;
 }
 
 // Initialize PD registers and states, then connect
@@ -219,6 +236,8 @@ void PD_reset(void) {
   PD_control.LastSetPDONum     = 1;
   PD_control.SetVoltage        = 5000;
   PD_control.LastSetVoltage    = 5000;
+  PD_control.SetRequestType    = REQ_FIXED;
+  PD_control.PDO_Mismatch      = 0;
 }
 
 // Copy buffers
@@ -289,16 +308,17 @@ void PD_PDO_request(void) {
   if(pdoNum > (PD_control.SourcePDONum - PD_control.SourcePPSNum)) {
     pdo.SinkPPSRDO.ObjectPosition              = pdoNum;
     pdo.SinkPPSRDO.OutputVoltageIn20mVunits    = PD_control.SetVoltage / 20;
-    pdo.SinkPPSRDO.OperatingCurrentIn50mAunits = PD_control.SetCurrent / 50; //modified by unagidojyou
+    pdo.SinkPPSRDO.OperatingCurrentIn50mAunits = PD_control.SetCurrent / 50;
     pdo.SinkPPSRDO.NoUSBSuspend                = 1u;
-    pdo.SinkPPSRDO.USBCommunicationsCapable    = 1u;
+    pdo.SinkPPSRDO.USBCommunicationsCapable    = 0u; // V1V2 doesn't have USB communication
   }
   else {
     pdo.SinkFixedVariableRDO.ObjectPosition               = pdoNum;
     pdo.SinkFixedVariableRDO.MaxOperatingCurrent10mAunits = PD_SC_fixed[pdoNum-1].Current/10;
     pdo.SinkFixedVariableRDO.OperatingCurrentIn10mAunits  = PD_SC_fixed[pdoNum-1].Current/10;
-    pdo.SinkFixedVariableRDO.USBCommunicationsCapable     = 1u;
+    pdo.SinkFixedVariableRDO.USBCommunicationsCapable     = 0u; // V1V2 doesn't have USB communication
     pdo.SinkFixedVariableRDO.NoUSBSuspend                 = 1u;
+    pdo.SinkFixedVariableRDO.CapabilityMismatch           = PD_control.PDO_Mismatch;
   }
 
   *(uint16_t*)&PD_TR_buffer[0] = mh.d16;
@@ -385,48 +405,84 @@ void PD_process(void) {
   PD_control.CC_LastState = temp;
 }
 
-void PD_update(void) {
-  uint8_t ccLine = PD_checkCC();
-  PD_control.WaitTime++;
+// Update PD, return 1 if PDO is changed
+uint8_t PD_update(void) {
+  uint8_t status = 0;
+  
+  if (!PD_control.USBPD_READY) {
+    uint8_t ccLine = PD_checkCC();
+    PD_control.WaitTime++;
 
-  if(PD_control.CC_State == CC_CHECK_CONNECT) {
-    if(ccLine == USBPD_CC1) {
-      PD_control.CC2_ConnectTimes = 0;
-      PD_control.CC1_ConnectTimes++;
-      if(PD_control.CC1_ConnectTimes > 5) {
-        PD_control.CC1_ConnectTimes = 0;
-        PD_control.CC_State = CC_CONNECT;
-        USBPD->CONFIG &= ~USBPD_CC_SEL;
-      }
-    }
-    else if(ccLine == USBPD_CC2) {
-      PD_control.CC1_ConnectTimes = 0;
-      PD_control.CC2_ConnectTimes++;
-      if(PD_control.CC2_ConnectTimes > 5) {
+    if(PD_control.CC_State == CC_CHECK_CONNECT) {
+      if(ccLine == USBPD_CC1) {
         PD_control.CC2_ConnectTimes = 0;
-        PD_control.CC_State = CC_CONNECT;
-        USBPD->CONFIG |= USBPD_CC_SEL;
+        PD_control.CC1_ConnectTimes++;
+        if(PD_control.CC1_ConnectTimes > 5) {
+          PD_control.CC1_ConnectTimes = 0;
+          PD_control.CC_State = CC_CONNECT;
+          USBPD->CONFIG &= ~USBPD_CC_SEL;
+        }
+      }
+      else if(ccLine == USBPD_CC2) {
+        PD_control.CC1_ConnectTimes = 0;
+        PD_control.CC2_ConnectTimes++;
+        if(PD_control.CC2_ConnectTimes > 5) {
+          PD_control.CC2_ConnectTimes = 0;
+          PD_control.CC_State = CC_CONNECT;
+          USBPD->CONFIG |= USBPD_CC_SEL;
+        }
+      }
+      else {
+        PD_control.CC1_ConnectTimes = 0;
+        PD_control.CC2_ConnectTimes = 0;
       }
     }
-    else {
-      PD_control.CC1_ConnectTimes = 0;
-      PD_control.CC2_ConnectTimes = 0;
+
+    if(PD_control.CC_State > CC_CHECK_CONNECT) {
+      if(ccLine == USBPD_CCNONE) {
+        PD_control.CC_NoneTimes++;
+        if(PD_control.CC_NoneTimes > 5) {
+          PD_control.CC_NoneTimes = 0;
+          PD_control.CC_State = CC_IDLE;
+          NVIC_DisableIRQ(USBPD_IRQn);  
+        }
+      } 
+      else PD_control.CC_NoneTimes = 0;    
     }
   }
 
-  if(PD_control.CC_State > CC_CHECK_CONNECT) {
-    if(ccLine == USBPD_CCNONE) {
-      PD_control.CC_NoneTimes++;
-      if(PD_control.CC_NoneTimes > 5) {
-        PD_control.CC_NoneTimes = 0;
-        PD_control.CC_State = CC_IDLE;
-        NVIC_DisableIRQ(USBPD_IRQn);  
-      }
-    } 
-    else PD_control.CC_NoneTimes = 0;    
-  }
-
+  cc_state_t old_state = PD_control.CC_State;
   PD_process();
+  if (old_state == CC_SOURCE_CAP && PD_control.CC_State == CC_SEND_REQUEST) {
+    status = 1; // PDO is changed
+  }
+  
+  return status;
+}
+
+// Main Loop function, handles Update and PPS Keep-Alive
+uint8_t PD_Loop(void) {
+  static uint32_t last_time = 0;
+  uint8_t status = PD_update();
+
+  if (PD_control.USBPD_READY && 
+      PD_control.SetRequestType == REQ_PPS && 
+      PD_control.PDO_Mismatch == 0) {
+      
+      // Handle timer wrap-around (using unsigned subtraction)
+      // Check if 5000ms has passed
+      if ((STK->CNTL - last_time) > (5000 * DLY_MS_TIME)) {
+          last_time = STK->CNTL;
+          if (PD_isReady()) {
+              PD_PDO_request();
+          }
+      }
+  } else {
+      // Reset timer when not in active PPS state to restart count upon entry
+      last_time = STK->CNTL;
+  }
+
+  return status;
 }
 
 // Analyze received data
