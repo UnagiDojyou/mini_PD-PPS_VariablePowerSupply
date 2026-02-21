@@ -66,10 +66,11 @@ typedef struct {
   uint16_t Voltage;
 } FixedSourceCap_t;
 
-typedef struct  {
+typedef struct {
   uint16_t MinVoltage;
   uint16_t MaxVoltage;
   uint16_t Current;
+  uint8_t PPSPowerLimited;
 } PPSSourceCap_t;
 
 typedef enum {
@@ -141,6 +142,7 @@ uint16_t PD_getVoltage(void);                   // Get active voltage
 uint16_t PD_getCurrent(void);                   // Get active Current
 uint8_t  PD_getMismatch(void);                  // Get mismatch flag
 void     PD_setMismatch(uint8_t mismatch);      // Set Capability Mismatch flag for next request
+uint8_t  PD_getPPSPowerLimited(uint8_t pdonum); // Get PPS Power Limited flag
 
 uint8_t PD_setPDO(uint8_t pdonum, uint16_t voltage);  // Set specified PDO and voltage
 uint8_t PD_setPDOwithCurrent(uint8_t pdonum, uint16_t voltage ,uint16_t current); // Set specified PDO, Voltage and Current 

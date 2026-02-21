@@ -409,7 +409,7 @@ void fiveVmode();
 void fixmode_setup();
 void fixmode_loop();
 void calmode();
-void triggermode_setup();
+void triggermode_init();
 void triggermode_loop();
 void triggersetmode_setup();
 void triggersetmode_loop();
@@ -478,11 +478,6 @@ void mode_menu() {
   while(1) {
     SEG_driver();
     DLY_ms(1);
-
-    if (mode == MODE_SETTRG) {
-      triggersetmode_setup();
-      triggersetmode_loop();
-    }
 
     if (PD_getPDONum()) {
       if (PD_Loop()) {
@@ -559,7 +554,7 @@ void mode_menu() {
             menu_num = 0; // reset to default
             break;
           case MODE_TRG:
-            triggermode_setup();
+            triggermode_init();
             mode = MODE_TRG;
             selectStartMode();
             menu_num = 0; // reset to default
@@ -592,13 +587,23 @@ void mode_menu() {
         break;
     }
 
+    // start with trigger set mode
+    if (mode == MODE_SETTRG) {
+      triggersetmode_setup();
+      selectStartMode();
+      notpushed = true;
+      count = TRIGGER_TIMEOUT;
+      menu_num = 0; // reset to default
+    }
+
     // trigger mode time out
     if (mode == MODE_TRG && notpushed) {
       count++;
       if (count > TRIGGER_TIMEOUT) {
         count = 0;
-        triggermode_setup();
-        triggermode_loop();
+        triggermode_init();
+        selectStartMode();
+        menu_num = 0; // reset to default
       }
     }
   }
@@ -1237,13 +1242,6 @@ void triggermode_waitpdo() {
 // ===================================================================================
 // trigger mode
 // ===================================================================================
-void triggermode_init() { // first time
-  // init
-  dispmode = DISP_VOLTAGE;
-  count = 0;
-  triggermode_setup();
-}
-
 void triggermode_setup() { // called when, init or Pdo changed
   triggermode_pdosearch();
 
@@ -1276,6 +1274,13 @@ void triggermode_setup() { // called when, init or Pdo changed
   PIN_output(PIN_CVCC);
   output = true;
   triggermode_loop();
+}
+
+void triggermode_init() { // first time
+  // init
+  dispmode = DISP_VOLTAGE;
+  count = 0;
+  triggermode_setup();
 }
 
 void triggermode_loop() {
