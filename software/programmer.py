@@ -11,17 +11,23 @@
 # -----------------------
 # You need to install PyUSB. Install it via "python3 -m pip install pyusb".
 #
-# On Windows you will need the Zadig tool (https://zadig.akeo.ie/) to install the
-# correct driver. Click "Options" and "List All Devices" to select the USB module.
-# Then install the libusb-win32 driver.
+# On Windows you will need to install CH327 or Zadig driver.
 #
 # Connect while pressing the Down button.
 # Run "sudo python3 programmer.py pd_pps_variable.bin".
 #
 
-import usb.core
-import usb.util
+try:
+    import usb.core
+    import usb.util
+    PYUSB_AVAILABLE = True
+except ImportError:
+    PYUSB_AVAILABLE = False
+
 import sys
+import platform
+import ctypes
+import os
 
 # ===================================================================================
 # Main Function
@@ -34,11 +40,9 @@ def _main():
         sys.exit(1)
 
     try:
-        print('Connecting to bootloader ...')
         isp = Programmer()
         isp.detect()
-        print('Found %s with bootloader v%s.' % (isp.chipname, isp.bootloader))
-        print('Flashing %s to %s ...' % (sys.argv[1], isp.chipname))
+        print('Flashing %s ...' % (sys.argv[1]))
         with open(sys.argv[1], 'rb') as f: data = f.read()
         isp.flash(data)
         print('Verifying %d bytes ...' % len(data))
@@ -51,27 +55,149 @@ def _main():
     sys.exit(0)
 
 # ===================================================================================
+# USB Backends
+# ===================================================================================
+
+class UsbBackendPyUSB:
+    def __init__(self, vid1, vid2, pid):
+        if not PYUSB_AVAILABLE:
+            raise Exception("PyUSB not installed")
+        self.dev = usb.core.find(idVendor = vid1, idProduct = pid)
+        if self.dev is None:
+            self.dev = usb.core.find(idVendor = vid2, idProduct = pid)
+            if self.dev is None:
+                raise Exception("Device not found via PyUSB")
+        try:
+            self.dev.set_configuration()
+        except:
+            raise Exception('Failed to access USB Device. Run as administrator')
+
+    def write(self, ep_out, stream):
+        self.dev.write(ep_out, stream)
+
+    def read(self, ep_in, size, timeout):
+        return self.dev.read(ep_in, size, timeout)
+
+    def close(self):
+        pass
+
+class UsbBackendCH375:
+    def __init__(self, vid1, vid2, pid):
+        if platform.system() != "Windows":
+            raise Exception("CH375 backend is only supported on Windows")
+            
+        if platform.architecture()[0] == '64bit':
+            dll_name = "CH375DLL64.dll"
+        else:
+            dll_name = "CH375DLL.dll"
+
+        try:
+            self.dll = ctypes.WinDLL(dll_name)
+        except OSError:
+            try:
+                dll_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), dll_name)
+                self.dll = ctypes.WinDLL(dll_path)
+            except OSError:
+                raise Exception(f"{dll_name} not found")
+
+        self.dll.CH375OpenDevice.restype = ctypes.c_void_p
+
+        class UsbDeviceDescriptor(ctypes.Structure):
+            _pack_ = 1
+            _fields_ = [
+                ("bLength", ctypes.c_uint8),
+                ("bDescriptorType", ctypes.c_uint8),
+                ("bcdUSB", ctypes.c_uint16),
+                ("bDeviceClass", ctypes.c_uint8),
+                ("bDeviceSubClass", ctypes.c_uint8),
+                ("bDeviceProtocol", ctypes.c_uint8),
+                ("bMaxPacketSize0", ctypes.c_uint8),
+                ("idVendor", ctypes.c_uint16),
+                ("idProduct", ctypes.c_uint16),
+                ("bcdDevice", ctypes.c_uint16),
+                ("iManufacturer", ctypes.c_uint8),
+                ("iProduct", ctypes.c_uint8),
+                ("iSerialNumber", ctypes.c_uint8),
+                ("bNumConfigurations", ctypes.c_uint8)
+            ]
+
+        self.index = -1
+        for i in range(8):
+            h = self.dll.CH375OpenDevice(ctypes.c_ulong(i))
+            if h not in (None, -1, 0xffffffff, 4294967295):
+                desc = UsbDeviceDescriptor()
+                length = ctypes.c_ulong(ctypes.sizeof(desc))
+                if self.dll.CH375GetDeviceDescr(ctypes.c_ulong(i), ctypes.byref(desc), ctypes.byref(length)):
+                    if desc.idProduct == pid and (desc.idVendor == vid1 or desc.idVendor == vid2):
+                        self.index = i
+                        break
+                self.dll.CH375CloseDevice(ctypes.c_ulong(i))
+                
+        if self.index == -1:
+            raise Exception("Device not found via CH375")
+
+    def __del__(self):
+        self.close()
+
+    def write(self, ep_out, stream):
+        buf = ctypes.create_string_buffer(bytes(stream))
+        length = ctypes.c_ulong(len(stream))
+        if not self.dll.CH375WriteData(ctypes.c_ulong(self.index), buf, ctypes.byref(length)):
+            raise Exception("CH375WriteData failed")
+
+    def read(self, ep_in, size, timeout):
+        buf = ctypes.create_string_buffer(size)
+        length = ctypes.c_ulong(size)
+        
+        ds = int(timeout)
+        try:
+            self.dll.CH375SetTimeoutEx(ctypes.c_ulong(self.index), ctypes.c_ulong(ds), ctypes.c_ulong(ds), ctypes.c_ulong(ds), ctypes.c_ulong(ds))
+        except AttributeError:
+            pass
+
+        if self.dll.CH375ReadData(ctypes.c_ulong(self.index), buf, ctypes.byref(length)):
+            if length.value > 0:
+                return bytearray(buf.raw[:length.value])
+            else:
+                raise Exception("CH375ReadData timeout")
+        else:
+            raise Exception("CH375ReadData failed")
+
+    def close(self):
+        if hasattr(self, 'index') and self.index != -1:
+            self.dll.CH375CloseDevice(ctypes.c_ulong(self.index))
+            self.index = -1
+
+# ===================================================================================
 # Programmer Class
 # ===================================================================================
 
 class Programmer:
     # Init programming interface
     def __init__(self):
-        # Find device
-        self.dev = usb.core.find(idVendor = CH_USB_VENDOR_ID1, idProduct = CH_USB_PRODUCT_ID)
-        if self.dev is None:
-            self.dev = usb.core.find(idVendor = CH_USB_VENDOR_ID2, idProduct = CH_USB_PRODUCT_ID)
-            if self.dev is None:
-                raise Exception('"mini PD-PPS VariablePowerSupply" not found.\nConnect while pressing the Down button and rerun.')
-
-        # Set configuration
+        # Find device via backends
+        self.backend = None
+        err_msgs = []
+        
+        # Try PyUSB first
         try:
-            self.dev.set_configuration()
-        except:
-            raise Exception('Failed to access USB Device. Run as administrator')
+            self.backend = UsbBackendPyUSB(CH_USB_VENDOR_ID1, CH_USB_VENDOR_ID2, CH_USB_PRODUCT_ID)
+        except Exception as e:
+            err_msgs.append(f"PyUSB: {e}")
+
+        # Try CH375 DLL on Windows if PyUSB failed
+        if self.backend is None and platform.system() == "Windows":
+            try:
+                self.backend = UsbBackendCH375(CH_USB_VENDOR_ID1, CH_USB_VENDOR_ID2, CH_USB_PRODUCT_ID)
+            except Exception as e:
+                err_msgs.append(f"CH375: {e}")
+                
+        if self.backend is None:
+            error_details = " | ".join(err_msgs)
+            raise Exception('"mini PD-PPS VariablePowerSupply" not found.\nConnect while pressing the Down button and rerun.\nDetails: ' + error_details)
 
         # Clear USB receive buffer
-        try:    self.dev.read(CH_USB_EP_IN, 1024, 1)
+        try:    self.backend.read(CH_USB_EP_IN, 1024, 1)
         except: None
 
         # Set initial chip parameters
@@ -83,8 +209,8 @@ class Programmer:
 
     # Send command and return reply
     def sendcommand(self, stream):
-        self.dev.write(CH_USB_EP_OUT, stream)
-        try:    return self.dev.read(CH_USB_EP_IN, CH_USB_PACKET_SIZE, CH_USB_TIMEOUT)
+        self.backend.write(CH_USB_EP_OUT, stream)
+        try:    return self.backend.read(CH_USB_EP_IN, CH_USB_PACKET_SIZE, CH_USB_TIMEOUT)
         except: return None
 
     # Detect, identify and setup chip
@@ -121,8 +247,8 @@ class Programmer:
             self.uidlen = 8
         if self.chipfamily in LASTWRITELIST:
             self.lastwrite = True
-        #if self.chipfamily in WPREMOVELIST: # unagidojyou
-        #    self.wpremove = True
+        if self.chipfamily in WPREMOVELIST:
+            self.wpremove = True
         self.chipuid = cfganswer[22:(22 + self.uidlen)]
 
         # Create local encryption key
@@ -141,13 +267,22 @@ class Programmer:
         reply = self.sendcommand(stream)
         if reply[4] != (sum & 0xff):
             raise Exception('Failed to set encryption key')
+        
+        # check configdata
+        if self.chipname == 'CH32X035F7P6':
+            print('mini PD-PPS VariablePowerSupply V1 or V2')
+            if (self.configdata[0] == 0xa5) and (self.configdata[2] == 0b00011111):
+                self.wpremove = False
+        if self.chipname == 'CH32X035G8U6':
+            print('mini PD-PPS VariablePowerSupply V3')
+            if (self.configdata[0] == 0xa5):
+                self.wpremove = False
 
         # Unlock chip (remove read protection)
-        if (self.wpremove) and (self.configdata[0] == 0xff):
+        if (self.wpremove) and (not(self.configdata[0] == 0xa5)):
+            print('disable read protection')
             self.configdata[0] = 0xa5
-            self.sendcommand(b'\xa8\x0e\x00\x07\x00' + self.configdata)
-        if self.chipid == 0x1379:
-            self.configdata[8] &= 0x7f
+            self.configdata[2] = 0b00011111
             self.sendcommand(b'\xa8\x0e\x00\x07\x00' + self.configdata)
 
     # Erase code flash
@@ -156,7 +291,7 @@ class Programmer:
             raise Exception('Not enough memory')
         size = (size + 1023) // 1024
         if size < 8:  size = 8
-        print("erase Page:0 ~", size * 4) # unagidojyou
+        # print("erase Page:0 ~", size * 4)
         stream = (CH_CMD_CODE_ERASE, 0x04, 0x00, size & 0xff, size >> 8, 0x00, 0x00)
         reply = self.sendcommand(stream)
         if reply[4] != 0x00:
@@ -248,13 +383,8 @@ CH_XOR_KEY_LEN      = 8
 # ===================================================================================
 
 DEVICES = [
-    {'name': 'CH32X033F8P6', 'id': 0x235a, 'code_size':  63488, 'data_size': 0},
-    {'name': 'CH32X035R8T6', 'id': 0x2350, 'code_size':  63488, 'data_size': 0},
-    {'name': 'CH32X035C8T6', 'id': 0x2351, 'code_size':  63488, 'data_size': 0},
-    {'name': 'CH32X035F8U6', 'id': 0x235e, 'code_size':  63488, 'data_size': 0},
     {'name': 'CH32X035G8U6', 'id': 0x2356, 'code_size':  63488, 'data_size': 0},
-    {'name': 'CH32X035G8R6', 'id': 0x235b, 'code_size':  63488, 'data_size': 0},
-    {'name': 'CH32X035F7P6', 'id': 0x2357, 'code_size':  49152, 'data_size': 0}
+    {'name': 'CH32X035F7P6', 'id': 0x2357, 'code_size':  63488, 'data_size': 0}
 ]
 
 LASTWRITELIST = (0x12, 0x14, 0x15, 0x17, 0x18,0x19, 0x1a, 0x23, 0x25)
