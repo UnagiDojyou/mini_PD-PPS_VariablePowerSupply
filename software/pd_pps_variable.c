@@ -7,7 +7,6 @@
 // ===================================================================================
 #include <config.h>             // user configurations
 #include <system.h>             // system functions
-#include <debug_serial.h>       // serial debug functions
 #include <gpio.h>               // GPIO functions
 #include <usbpd_sink.h>         // USB PD sink functions
 #include <flash_rom.h>          // flash rom functions
@@ -27,11 +26,12 @@
 
 // if DEBUG is defined, calibration is disaled.
 // #define DEBUG
+#define DEBUG_IGNORE_CAL_DATA // Ignore calibration data
 #define DEBUG_VDD 3000 // 3V
 #define DEBUG_SHUNT_R 320 //10mΩ*32
 #define DEBUG_HIGH_R 10000 //10kΩ
 #define DEBUG_LOW_R 1000 //1kΩ
-#define DEBUG_AMPOFFSET 550 // mA@0A
+#define DEBUG_AMPOFFSET 0 // 550 // mA@0A
 
 #define MAXCOUNT 200 // Proportional to the interval of voltage,ampar,watt update time
 #define LONGPUSH_SPEED 100 // supeed of long push down/up
@@ -235,12 +235,24 @@ bool selectCalMode() {
     return true;
     #endif
     #ifdef DEBUG
+    #warning "DEBUG mode!"
     coeffv_a = (DEBUG_VDD * (DEBUG_HIGH_R + DEBUG_LOW_R) / DEBUG_LOW_R) * 1000 / 4095;
     coeffv_b = 0;
     coeffi_a = (1000 * DEBUG_VDD) / ((DEBUG_SHUNT_R * 4095) / 1000);
     coeffi_b = -DEBUG_AMPOFFSET * 1000;
     #endif
   }
+
+  #ifdef DEBUG
+  #ifdef DEBUG_IGNORE_CAL_DATA
+  else {
+    coeffv_a = (DEBUG_VDD * (DEBUG_HIGH_R + DEBUG_LOW_R) / DEBUG_LOW_R) * 1000 / 4095;
+    coeffv_b = 0;
+    coeffi_a = (1000 * DEBUG_VDD) / ((DEBUG_SHUNT_R * 4095) / 1000);
+    coeffi_b = -DEBUG_AMPOFFSET * 1000;
+  }
+  #endif
+  #endif
 
   PIN_input(PIN_SEG_A1);
   PIN_input(PIN_SEG_A3);
@@ -896,7 +908,6 @@ void fixmode_setup() {
   dispmode = DISP_VOLTAGE;
   output = false;
   invalid_pd = !PD_setVoltage(set_Voltage);
-  #warning "PIN_high(CV)?"
   fixmode_loop();
 }
 
@@ -1027,7 +1038,6 @@ void fiveVmode() {
   set_Voltage = 5000;
   set_Current = LIMIT_FIVE_CURRENT;
   invalid_pd = false;
-  #warning "PIN_high(CV)?"
   output = true;
 
   while (1) {
