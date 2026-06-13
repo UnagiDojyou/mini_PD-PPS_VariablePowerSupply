@@ -287,15 +287,15 @@ void PD_PDO_analyze(void) {
   for(uint8_t i=0; i<PD_control.SourcePDONum; i++) { 
     test.d32 = *(uint32_t*)(&PD_SC_buffer[i*4]);
     if((test.SourcePPSPDO.AugmentedPowerDataObject==3u) && (test.SourcePPSPDO.SPRprogrammablePowerSupply==0)) {
-         PD_control.PPSSourceCap[PD_control.SourcePPSNum].MaxVoltage = POWER_DECODE_100MV(test.SourcePPSPDO.MaxVoltageIn100mVincrements);
-         PD_control.PPSSourceCap[PD_control.SourcePPSNum].MinVoltage = POWER_DECODE_100MV(test.SourcePPSPDO.MinVoltageIn100mVincrements);
-         PD_control.PPSSourceCap[PD_control.SourcePPSNum].Current    = POWER_DECODE_50MA(test.SourcePPSPDO.MaxCurrentIn50mAincrements);
-         PD_control.PPSSourceCap[PD_control.SourcePPSNum].PPSPowerLimited = test.SourcePPSPDO.PPSpowerLimited;
-         PD_control.SourcePPSNum++;
+      PD_control.PPSSourceCap[PD_control.SourcePPSNum].MaxVoltage = POWER_DECODE_100MV(test.SourcePPSPDO.MaxVoltageIn100mVincrements);
+      PD_control.PPSSourceCap[PD_control.SourcePPSNum].MinVoltage = POWER_DECODE_100MV(test.SourcePPSPDO.MinVoltageIn100mVincrements);
+      PD_control.PPSSourceCap[PD_control.SourcePPSNum].Current    = POWER_DECODE_50MA(test.SourcePPSPDO.MaxCurrentIn50mAincrements);
+      PD_control.PPSSourceCap[PD_control.SourcePPSNum].PPSPowerLimited = test.SourcePPSPDO.PPSpowerLimited;
+      PD_control.SourcePPSNum++;
     }
     else {
-         PD_control.FixedSourceCap[i].Current = POWER_DECODE_10MA(test.SourceFixedPDO.MaxCurrentIn10mAunits);
-         PD_control.FixedSourceCap[i].Voltage = POWER_DECODE_50MV(test.SourceFixedPDO.VoltageIn50mVunits);
+      PD_control.FixedSourceCap[i].Current = POWER_DECODE_10MA(test.SourceFixedPDO.MaxCurrentIn10mAunits);
+      PD_control.FixedSourceCap[i].Voltage = POWER_DECODE_50MV(test.SourceFixedPDO.VoltageIn50mVunits);
     }
   }
 }
@@ -341,7 +341,7 @@ void PD_process(void) {
   switch (PD_control.CC_State) {
 
     case CC_IDLE:
-      NVIC_DisableIRQ(USBPD_IRQn);  
+      NVIC_DisableIRQ(USBPD_IRQn);
       PD_reset();
       PD_control.CC_State = CC_CHECK_CONNECT;
       break;
@@ -353,7 +353,7 @@ void PD_process(void) {
       if(PD_control.CC_LastState != PD_control.CC_State) {
         PD_RX_mode();
         NVIC_SetPriority(USBPD_IRQn, 0x00);
-        NVIC_EnableIRQ(USBPD_IRQn);  
+        NVIC_EnableIRQ(USBPD_IRQn);
       }
       break;
 
@@ -455,7 +455,7 @@ uint8_t PD_update(void) {
           NVIC_DisableIRQ(USBPD_IRQn);
         }
       } 
-      else PD_control.CC_NoneTimes = 0;
+      else PD_control.CC_NoneTimes = 0;    
     }
   }
 
@@ -544,7 +544,7 @@ void PD_RX_analyze(void) {
     my_mh.MessageHeader.SpecificationRevision = PD_control.PD_Version;
     *(uint16_t*)&PD_TR_buffer[0] =  my_mh.d16;
     PD_sendData(2);
-  } 
+  }
 }
 
 // ===================================================================================
