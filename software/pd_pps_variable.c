@@ -694,6 +694,15 @@ void mode_menu() {
       default:
         break;
     }
+    
+    // start with trigger set mode
+    if (mode == MODE_SETTRG) {
+      triggersetmode_setup();
+      selectStartMode();
+      notpushed = true;
+      count = TRIGGER_TIMEOUT;
+      menu_num = 0; // reset to default
+    }
 
     // start with trigger set mode
     if (mode == MODE_SETTRG) {
@@ -818,7 +827,6 @@ void ppsmode_loop() {
       sum_Voltage = 0;
       sum_Current = 0;
     }
-
     if (PD_Loop()) { // change PDO
       pdonum = 0;
       for (uint8_t i = 1; i <= PD_getPDONum(); i++) {
