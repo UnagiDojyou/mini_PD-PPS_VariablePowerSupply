@@ -1,3 +1,4 @@
+// mini PD-PPS VariablePowerSupply firmware for V3~ board
 #pragma once
 
 #ifdef __cplusplus

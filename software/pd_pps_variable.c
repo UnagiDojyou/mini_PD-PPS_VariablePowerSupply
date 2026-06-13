@@ -1,7 +1,6 @@
 // ===================================================================================
 // mini PD-PPS VariablePowerSupply firmware
 #define VERSION 940 // 0.94
-// #define V1V2
 // Author: Unagi Dojyou
 // based on https://github.com/wagiminator
 // License: http://creativecommons.org/licenses/by-sa/3.0/
@@ -16,11 +15,10 @@
 #include <usbpd_sink.h>         // USB PD sink functions
 #include <flash_rom.h>          // flash rom functions
 
-#ifndef V1V2
 #include "7seg_button.h"
+#ifndef V1V2
 #include "pin_define.h"
 #else
-#include "7seg_button_V1V2.h"
 #include "pin_define_V1V2.h"
 #endif
 

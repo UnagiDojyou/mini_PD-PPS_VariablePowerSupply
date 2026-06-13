@@ -6,7 +6,6 @@ extern "C" {
 
 #include <system.h>
 #include <gpio.h>
-#include "pin_define.h"
 
 // button
 #define BUTTON_DOWN_SHORT 1
