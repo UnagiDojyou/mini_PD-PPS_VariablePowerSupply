@@ -1,7 +1,7 @@
 // ===================================================================================
 // mini PD-PPS VariablePowerSupply firmware
 #define VERSION 940 // 0.94
-#define V1V2
+// #define V1V2
 // Author: Unagi Dojyou
 // based on https://github.com/wagiminator
 // License: http://creativecommons.org/licenses/by-sa/3.0/
