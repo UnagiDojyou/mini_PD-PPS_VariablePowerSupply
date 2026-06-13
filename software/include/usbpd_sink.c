@@ -318,13 +318,13 @@ void PD_PDO_request(void) {
     pdo.SinkPPSRDO.OutputVoltageIn20mVunits    = PD_control.SetVoltage / 20;
     pdo.SinkPPSRDO.OperatingCurrentIn50mAunits = PD_control.SetCurrent / 50;
     pdo.SinkPPSRDO.NoUSBSuspend                = 1u;
-    pdo.SinkPPSRDO.USBCommunicationsCapable    = 0u; // V1V2 doesn't have USB communication
+    pdo.SinkPPSRDO.USBCommunicationsCapable    = 1u;
   }
   else {
     pdo.SinkFixedVariableRDO.ObjectPosition               = pdoNum;
     pdo.SinkFixedVariableRDO.MaxOperatingCurrent10mAunits = PD_SC_fixed[pdoNum-1].Current/10;
     pdo.SinkFixedVariableRDO.OperatingCurrentIn10mAunits  = PD_SC_fixed[pdoNum-1].Current/10;
-    pdo.SinkFixedVariableRDO.USBCommunicationsCapable     = 0u; // V1V2 doesn't have USB communication
+    pdo.SinkFixedVariableRDO.USBCommunicationsCapable     = 1u;
     pdo.SinkFixedVariableRDO.NoUSBSuspend                 = 1u;
     pdo.SinkFixedVariableRDO.CapabilityMismatch           = PD_control.PDO_Mismatch;
   }

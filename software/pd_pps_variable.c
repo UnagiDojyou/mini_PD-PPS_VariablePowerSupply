@@ -1,9 +1,14 @@
 // ===================================================================================
-// mini PD-PPS VariablePowerSupply firmware for V1,V2 board
+// mini PD-PPS VariablePowerSupply firmware
 #define VERSION 940 // 0.94
+#define V1V2
 // Author: Unagi Dojyou
 // based on https://github.com/wagiminator
 // License: http://creativecommons.org/licenses/by-sa/3.0/
+// ===================================================================================
+
+// ===================================================================================
+// include
 // ===================================================================================
 #include <config.h>             // user configurations
 #include <system.h>             // system functions
@@ -11,8 +16,13 @@
 #include <usbpd_sink.h>         // USB PD sink functions
 #include <flash_rom.h>          // flash rom functions
 
+#ifndef V1V2
 #include "7seg_button.h"
 #include "pin_define.h"
+#else
+#include "7seg_button_V1V2.h"
+#include "pin_define_V1V2.h"
+#endif
 
 // ===================================================================================
 // configuration
@@ -26,11 +36,20 @@
 
 // if DEBUG is defined, calibration is disaled.
 // #define DEBUG
-
+#define DEBUG_IGNORE_CAL_DATA // Ignore calibration data
 #define DEBUG_VDD 3000 // 3V
+
+#ifndef V1V2
+#define DEBUG_SHUNT_R 320 //10mΩ*32
+#define DEBUG_HIGH_R 10000 //10kΩ
+#define DEBUG_LOW_R 1000 //1kΩ
+#define DEBUG_I_OFFSET 0 // mA@0A
+#else
 #define DEBUG_SHUNT_R 100 // 100mΩ
 #define DEBUG_HIGH_R 12000 // 12kΩ
 #define DEBUG_LOW_R 1500 // 1.5kΩ
+#define DEBUG_I_AMPOFFSET 0 // mA@0A
+#endif
 
 #define MAXCOUNT 200 // Proportional to the interval of voltage,ampar,watt update time
 #define LONGPUSH_SPEED 100 // supeed of long push down/up
@@ -38,6 +57,29 @@
 // Board Electrical Maximum
 #define INRUSH_TIME 10 // 10ms
 
+#ifndef V1V2
+#if defined(DISABLE_CURRENT) && defined(DISABLE_MOSFET)
+#define MIN_VIN 5000 // 5V
+#define MAX_VIN 30000 // 30V, Zener diode and LDO limit
+#define MAX_IOUT_PULSE 10000 // 10A, 10ms Pulse Current Limit
+#define MAX_IOUT_CONTI 8000 // 8A, Continuous Current Limit, ADC
+#elif defined(DISABLE_CURRENT)
+#define MIN_VIN 3100 // 3.1V, LDO and CH32X035 limit
+#define MAX_VIN 24000 // 30V, Zener diode and LDO limit
+#define MAX_IOUT_PULSE 10000 // 10A, 10ms Pulse Current Limit, MOSFET limit
+#define MAX_IOUT_CONTI 8000 // 8A, Continuous Current Limit, MOSFET limit
+#elif defined(DISABLE_MOSFET)
+#define MIN_VIN 5000 // 5V
+#define MAX_VIN 30000 // 30V, Zener diode and LDO limit
+#define MAX_IOUT_PULSE 10000 // 10A, 10ms Pulse Current Limit
+#define MAX_IOUT_CONTI 8000 // 8A, Continuous Current Limit, MOSFET limit
+#else // normal
+#define MIN_VIN 3100 // 3.1V, LDO and CH32X035 limit
+#define MAX_VIN 24000 // 24V, Zener diode limit
+#define MAX_IOUT_PULSE 10000 // 10A, 10ms Pulse Current Limit, MOSFET limit
+#define MAX_IOUT_CONTI 8000 // 8A, Continuous Current Limit, MOSFET limit
+#endif
+#else // for V1V2
 #if defined(DISABLE_CURRENT) && defined(DISABLE_MOSFET)
 #define MIN_VIN 5000 // 5V
 #define MAX_VIN 24000 // 24V, Zener diode limit
@@ -58,6 +100,7 @@
 #define MAX_VIN 24000 // 24V, Zener diode limit
 #define MAX_IOUT_PULSE 10000 // 10A, 10ms Pulse Current Limit, AO3400 limit
 #define MAX_IOUT_CONTI 2500 // 2.5A, Continuous Current Limit, Temperature Limit
+#endif
 #endif
 
 // over current protection
@@ -80,7 +123,11 @@
 #define CALV1 5000 // calibration at 5V
 #define CALV2 18000 // calibration at 18V
 #define CALA1 0 // calibration at 0A
+#ifndef V1V2
+#define CALA2 3000 // calibration at 3A
+#else
 #define CALA2 2000 // calibration at 2A
+#endif
 
 // define PPS
 #define PPS_MIN_CURRENT 1000 // 1A
@@ -119,6 +166,9 @@
 // time out of triger menu
 #define TRIGGER_TIMEOUT 2000 // 2second
 
+// OPA addr
+#define OPA_CTLR1_PSEL2_MASK 0x00180000
+
 // ===================================================================================
 // define
 // ===================================================================================
@@ -142,6 +192,21 @@
 // functions
 // ===================================================================================
 
+// enable OPA2, PA7 as +, NON as -, PA5 as OUT, x32
+void OPA_enable() {
+  OPA->OPAKEY = OPA_KEY1; // OPA Unlock
+  OPA->OPAKEY = OPA_KEY2; // OPA Unlock
+  OPA->CTLR1 &= ~OPA_CTLR1_NSEL2_OFF; // unmask CTLR1_NSEL2
+  // OPA->CTLR1 |= OPA_CTLR1_NSEL2_PB1; // configure PB1 as opa-
+  OPA->CTLR1 |= OPA_CTLR1_NSEL2_PGA_32X; // coufigure opa- 32x
+  OPA->CTLR1 |= OPA_CTLR1_FB_EN2; // enable FB
+  OPA->CTLR1 &= ~OPA_CTLR1_PSEL2_MASK; // unmask CTLR1_NSEL2
+  OPA->CTLR1 |= OPA_CTLR1_PSEL2_PA7; // configure PA7 as opa+
+  OPA->CTLR1 |= OPA_CTLR1_MODE2_PA4; // configure PA4 as opaOUT
+  OPA->CTLR1 |= OPA_CTLR1_EN2; // enable OPA2
+  OPA->CTLR1 |= OPA_CTLR1_OPA_LOCK; // OPA Lock
+}
+
 void disable_swd(void) {
   uint32_t temp = AFIO->PCFR1; //read reg
   temp &= ~AFIO_PCFR1_SWJ_CFG; //clear SWG_CFG
@@ -155,6 +220,18 @@ void enable_AFIO(void) {
   temp |= 0x00000001; //set AFIOEN
   RCC->APB2PCENR = temp; //write reg
 }
+
+#ifndef V1V2
+#define CVCC_CV() PIN_high(PIN_CV);PIN_low(PIN_CC)
+#define CVCC_CC() PIN_low(PIN_CV);PIN_high(PIN_CC)
+#define CVCC_OFF() PIN_low(PIN_CV);PIN_low(PIN_CC)
+#define CVCC_CVCC() PIN_high(PIN_CV);PIN_high(PIN_CC)
+#else
+#define CVCC_CV() PIN_output(PIN_CVCC);PIN_low(PIN_CVCC)
+#define CVCC_CC() PIN_output(PIN_CVCC);PIN_high(PIN_CVCC)
+#define CVCC_OFF() PIN_input(PIN_CVCC)
+#define CVCC_CVCC() PIN_toggle(PIN_CVCC)
+#endif
 
 uint8_t mode = 0; // 0:5V, 1:Fix, 2:PPS, 3:Cal, 4:trg 5:settrg
 uint32_t coeffv_a = 0;
@@ -230,16 +307,39 @@ bool selectCalMode() {
     return true;
     #endif
     #ifdef DEBUG
+    #warning "DEBUG mode!"
     coeffv_a = (DEBUG_VDD * (DEBUG_HIGH_R + DEBUG_LOW_R) / DEBUG_LOW_R) * 1000 / 4095;
     coeffv_b = 0;
     coeffi_a = (1000 * DEBUG_VDD) / ((DEBUG_SHUNT_R * 4095) / 1000);
-    coeffi_b = 0;
+    coeffi_b = -DEBUG_I_OFFSET;
     #endif
   }
+
+  #ifdef DEBUG
+  #ifdef DEBUG_IGNORE_CAL_DATA
+  else {
+    coeffv_a = (DEBUG_VDD * (DEBUG_HIGH_R + DEBUG_LOW_R) / DEBUG_LOW_R) * 1000 / 4095;
+    coeffv_b = 0;
+    coeffi_a = (1000 * DEBUG_VDD) / ((DEBUG_SHUNT_R * 4095) / 1000);
+    coeffi_b = -DEBUG_I_OFFSET * 1000;
+  }
+  #endif
+  #endif
 
   PIN_input(PIN_SEG_A1);
   PIN_input(PIN_SEG_A3);
   PIN_output(PIN_SEG_A2);
+  #ifndef V1V2
+  PIN_low(PIN_SEG_A2);
+  DLY_ms(1);
+  if (!PIN_read(PIN_BUTTON)) {
+    // CVCC
+    PIN_input(PIN_SEG_A2);
+    PIN_output(PIN_SEG_A1);
+    PIN_low(PIN_SEG_A1);
+    DLY_ms(1);
+    if (!PIN_read(PIN_BUTTON)) {
+  #else
   PIN_high(PIN_SEG_A2);
   DLY_ms(1);
   if (PIN_read(PIN_BUTTON)) {
@@ -249,6 +349,7 @@ bool selectCalMode() {
     PIN_high(PIN_SEG_A1);
     DLY_ms(1);
     if (PIN_read(PIN_BUTTON)) {
+  #endif
       // CVCC and OP
       calmode = true;
     }
@@ -262,7 +363,7 @@ bool selectCalMode() {
 // select mode
 #ifdef DISABLE_MOSFET
 void selectStartMode() {
-  PIN_input(PIN_CVCC);
+  CVCC_OFF();
   if (selectCalMode()) {
     mode = MODE_CAL;
   } else if (readTrigger()) {
@@ -273,7 +374,7 @@ void selectStartMode() {
 }
 #else
 void selectStartMode() {
-  PIN_input(PIN_CVCC);
+  CVCC_OFF();
   if (selectCalMode()) {
     mode = MODE_CAL;
   } else if (readTrigger()) {
@@ -355,28 +456,28 @@ void manageDisp(uint16_t disp_set_Voltage, uint16_t disp_set_Current) {
   if (output) { // ON
 #ifdef DISABLE_CURRENT
     SEG_setNumber(Voltage, false);
-    PIN_low(PIN_CVCC);
+    CVCC_CV();
     dispmode = DISP_VOLTAGE;
 #else
     switch (dispmode) {
       case DISP_VOLTAGE:
         SEG_setNumber(Voltage, false);
-        PIN_low(PIN_CVCC);
+        CVCC_CV();
         break;
       case DISP_CURRENT:
         SEG_setNumber(Current, false);
-        PIN_high(PIN_CVCC);
+        CVCC_CC();
         break;
       case DISP_WATT:
         SEG_setNumber(Voltage * Current / 1000, false);
-        PIN_toggle(PIN_CVCC);
+        CVCC_CVCC();
         break;
     }
 #endif
   } else { // OFF
     switch (dispmode) {
       case DISP_CURRENT:
-        PIN_high(PIN_CVCC);
+        CVCC_CC();
         if (disp_set_Current == UINT16_MAX) {
           SEG_setEach(SEG_NON, SEG_MINUS, SEG_NON, 0); // " - "
         } else {
@@ -388,7 +489,7 @@ void manageDisp(uint16_t disp_set_Voltage, uint16_t disp_set_Current) {
         // not need break
       case DISP_VOLTAGE:
         SEG_setNumber(disp_set_Voltage, true);
-        PIN_low(PIN_CVCC);
+        CVCC_CV();
         break;
     }
   }
@@ -422,11 +523,21 @@ void mode_menu();
 // ===================================================================================
 int main(void) {
   // Setup
+  #ifndef V1V2
+  OPA_enable();
+  PIN_input_PD(PIN_BOOT_BUTTON); // pull down
+  PIN_input_PU(PIN_BUTTON); // pull up
+  PIN_output(PIN_CV);
+  PIN_output(PIN_CC);
+  #else
   enable_AFIO();
   disable_swd();
-  PIN_output(PIN_ONOFF);
-  PIN_input(PIN_CVCC);
   PIN_input_PD(PIN_BUTTON); //pull down
+  #endif
+
+  PIN_output(PIN_ONOFF);
+  PIN_low(PIN_ONOFF);
+  CVCC_OFF();
  
   PIN_output(PIN_SEG_A1);
   PIN_output(PIN_SEG_A2);
@@ -440,10 +551,7 @@ int main(void) {
   PIN_output(PIN_SEG_F);
   PIN_output(PIN_SEG_G);
   PIN_output(PIN_SEG_OP);
-  
-  PIN_low(PIN_ONOFF);
 
-  // Setup
   ADC_init(); // init ADC
   ADC_slow();
 
@@ -473,7 +581,7 @@ void mode_menu() {
   uint8_t menu_num = 0;
   bool notpushed = true; // Press any button to be false
   count = 0;
-  PIN_input(PIN_CVCC);
+  CVCC_OFF();
 
   while(1) {
     SEG_driver();
@@ -646,8 +754,7 @@ void ppsmode_setup() {
   }
 
   // disp maxVoltage
-  PIN_output(PIN_CVCC);
-  PIN_low(PIN_CVCC);
+  CVCC_CV();
   SEG_setNumber(max_Voltage,true);
   do {
     count = BUTTON_read();
@@ -670,7 +777,7 @@ void ppsmode_setup() {
   } while (!BUTTON_IS_SHORT(count));
 
   // disp maxCurrent
-  PIN_high(PIN_CVCC);
+  CVCC_CC();
   SEG_setNumber(max_Current,true);
   do {
     count = BUTTON_read();
@@ -886,8 +993,6 @@ void fixmode_setup() {
   dispmode = DISP_VOLTAGE;
   output = false;
   invalid_pd = !PD_setVoltage(set_Voltage);
-  PIN_output(PIN_CVCC);
-  PIN_low(PIN_CVCC);
   fixmode_loop();
 }
 
@@ -1018,8 +1123,6 @@ void fiveVmode() {
   set_Voltage = 5000;
   set_Current = LIMIT_FIVE_CURRENT;
   invalid_pd = false;
-  PIN_output(PIN_CVCC);
-  PIN_low(PIN_CVCC);
   output = true;
 
   while (1) {
@@ -1037,8 +1140,7 @@ void fiveVmode() {
       sum_Current = 0;
     }
     if (!output) {
-      PIN_low(PIN_ONOFF);
-      PIN_input(PIN_CVCC);
+      CVCC_OFF();
       return;
     }
 
@@ -1064,7 +1166,7 @@ void fiveVmode() {
       case BUTTON_OP_SHORT:
         PIN_low(PIN_ONOFF);
         output = false;
-        PIN_input(PIN_CVCC);
+        CVCC_OFF();
         return;
       default:
         break;
@@ -1085,8 +1187,7 @@ void calmode() {
 
   // calivration 5.00V
   SEG_setNumber(CALV1, false);
-  PIN_output(PIN_CVCC);
-  PIN_low(PIN_CVCC);
+  CVCC_CV();
   PIN_high(PIN_ONOFF);
   do {
     count = BUTTON_read();
@@ -1119,6 +1220,13 @@ void calmode() {
 #ifndef DISABLE_CURRENT
   // calivration 0.00A
   SEG_setNumber(CALA1, false);
+  CVCC_CC();
+  PIN_low(PIN_ONOFF);
+  do {
+    count = BUTTON_read();
+    DLY_ms(1);
+    SEG_driver();
+  } while (!BUTTON_IS_SHORT(count));
   sum = 0;
   for (uint8_t i = 0; i < MAXCOUNT; i++) { // automatically done
     ADC_input(PIN_I_ADC);
@@ -1127,9 +1235,10 @@ void calmode() {
   }
   aveA1 = (100 * sum) / MAXCOUNT;
 
-  // calivration 2.00A
+  // calivration 2.00A/3.00A
   SEG_setNumber(CALA2, false);
-  PIN_high(PIN_CVCC);
+  CVCC_CC();
+  PIN_high(PIN_ONOFF);
   do {
     count = BUTTON_read();
     DLY_ms(1);
@@ -1150,13 +1259,12 @@ void calmode() {
   coeffi_a = 0;
   coeffi_b = 0;
 #endif
-
   coeffv_a = (1000 * 100 * (CALV2 - CALV1)) / (aveV2 - aveV1);
   coeffv_b = 1000 * CALV2 - ((coeffv_a * aveV2) / 100);
 
   // disp result
   SEG_setNumber(coeffv_a,false);
-  PIN_low(PIN_CVCC);
+  CVCC_CV();
   do {
     count = BUTTON_read();
     DLY_ms(1);
@@ -1164,7 +1272,7 @@ void calmode() {
   } while (!BUTTON_IS_SHORT(count));
   
   SEG_setNumber(coeffi_a,false);
-  PIN_high(PIN_CVCC);
+  CVCC_CC();
   do {
     count = BUTTON_read();
     DLY_ms(1);
@@ -1184,10 +1292,10 @@ void calmode() {
     DLY_ms(1);
   }
 }
+
 // ===================================================================================
 // trigger mode
 // ===================================================================================
-
 void triggermode_pdosearch() {
   pdonum = 0; // No pdonum selected
   // select pdo
@@ -1220,7 +1328,7 @@ void triggermode_waitpdo() {
   SEG_setEach(SEG_MINUS, SEG_MINUS, SEG_MINUS, 0); // "---"
   output =false;
   PIN_low(PIN_ONOFF);
-  PIN_input(PIN_CVCC);
+  CVCC_OFF();
   PD_setMismatch(1);
   PD_setVoltage(5000);
   while(!pdonum) {
@@ -1239,9 +1347,6 @@ void triggermode_waitpdo() {
   output = true;
 }
 
-// ===================================================================================
-// trigger mode
-// ===================================================================================
 void triggermode_setup() { // called when, init or Pdo changed
   triggermode_pdosearch();
 
@@ -1271,7 +1376,6 @@ void triggermode_setup() { // called when, init or Pdo changed
   }
   
   invalid_pd = false;
-  PIN_output(PIN_CVCC);
   output = true;
   triggermode_loop();
 }
@@ -1351,8 +1455,6 @@ void triggersetmode_setup() {
   output = false;
   trigger_voltage = PPS_DEFAULT_VOLTAGE;
   trigger_current = UINT16_MAX; // not set current limit
-  PIN_output(PIN_CVCC);
-  PIN_low(PIN_CVCC);
   triggersetmode_loop();
 }
 
@@ -1363,7 +1465,6 @@ void triggersetmode_loop() {
     DLY_ms(1);
     manageDisp(trigger_voltage, trigger_current);
     keepPD();
-
     count++;
     if (count > MAXCOUNT) {
       count = 0;
