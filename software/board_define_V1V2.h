@@ -7,6 +7,36 @@ extern "C" {
 
 #include <system.h>
 
+// Board Components
+#define DEBUG_VDD 3000 // 3V
+#define DEBUG_SHUNT_R 100 // 100mΩ
+#define DEBUG_HIGH_R 12000 // 12kΩ
+#define DEBUG_LOW_R 1500 // 1.5kΩ
+#define DEBUG_I_AMPOFFSET 0 // mA@0A
+
+// Board Electrical Maximum
+#if defined(DISABLE_CURRENT) && defined(DISABLE_MOSFET)
+#define MIN_VIN 5000 // 5V
+#define MAX_VIN 24000 // 24V, Zener diode limit
+#define MAX_IOUT_PULSE 30000 // 30A, 10ms Pulse Current Limit
+#define MAX_IOUT_CONTI 6000 // 6A, Continuous Current Limit, Temperature Limit
+#elif defined(DISABLE_CURRENT)
+#define MIN_VIN 3100 // 3.1V, LDO and CH32X035 limit
+#define MAX_VIN 24000 // 24V, Zener diode limit
+#define MAX_IOUT_PULSE 10000 // 10A, 10ms Pulse Current Limit, AO3400 limit
+#define MAX_IOUT_CONTI 3500 // 3.5A, Continuous Current Limit, AO3400 limit
+#elif defined(DISABLE_MOSFET)
+#define MIN_VIN 5000 // 5V
+#define MAX_VIN 24000 // 24V, Zener diode limit
+#define MAX_IOUT_PULSE 10000 // 10A, 10ms Pulse Current Limit
+#define MAX_IOUT_CONTI 3000 // 3.0A, Continuous Current Limit, Temperature Limit
+#else // normal
+#define MIN_VIN 3100 // 3.1V, LDO and CH32X035 limit
+#define MAX_VIN 24000 // 24V, Zener diode limit
+#define MAX_IOUT_PULSE 10000 // 10A, 10ms Pulse Current Limit, AO3400 limit
+#define MAX_IOUT_CONTI 2500 // 2.5A, Continuous Current Limit, Temperature Limit
+#endif
+
 // PIN assign
 #define PIN_V_ADC PA4
 #define PIN_I_ADC PA6

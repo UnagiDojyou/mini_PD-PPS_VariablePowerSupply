@@ -10,7 +10,14 @@
 # Files and Folders
 MAINFILE = pd_pps_variable.c
 TARGET   = pd_pps_variable
+TARGET_DISABLE_MOSFET = pd_pps_variable_disable_mosfet
+TARGET_DISABLE_CURRENT = pd_pps_variable_disable_current
+TARGET_DISABLE_MOSFET_DISABLE_CURRENT = pd_pps_variable_disable_mosfet_disable_current
 TARGET_V1V2 = pd_pps_variable_V1V2
+TARGET_V1V2_DISABLE_MOSFET = pd_pps_variable_V1V2_disable_mosfet
+TARGET_V1V2_DISABLE_CURRENT = pd_pps_variable_V1V2_disable_current
+TARGET_V1V2_DISABLE_MOSFET_DISABLE_CURRENT = pd_pps_variable_V1V2_disable_mosfet_disable_current
+TARGETS = $(TARGET) $(TARGET_DISABLE_MOSFET) $(TARGET_DISABLE_CURRENT) $(TARGET_DISABLE_MOSFET_DISABLE_CURRENT) $(TARGET_V1V2) $(TARGET_V1V2_DISABLE_MOSFET) $(TARGET_V1V2_DISABLE_CURRENT) $(TARGET_V1V2_DISABLE_MOSFET_DISABLE_CURRENT)
 INCLUDE  = include
 TOOLS    = tools
 
@@ -37,90 +44,93 @@ COMMON_CFILES = $(MAINFILE) $(wildcard $(INCLUDE)/*.c) $(wildcard $(INCLUDE)/*.S
 CFILES   = $(COMMON_CFILES) 7seg_button.c
 CFILES_V1V2 = $(COMMON_CFILES) 7seg_button_V1V2.c
 
+$(TARGET)_CFILES = $(CFILES)
+$(TARGET_DISABLE_MOSFET)_CFILES = $(CFILES)
+$(TARGET_DISABLE_CURRENT)_CFILES = $(CFILES)
+$(TARGET_DISABLE_MOSFET_DISABLE_CURRENT)_CFILES = $(CFILES)
+$(TARGET_V1V2)_CFILES = $(CFILES_V1V2)
+$(TARGET_V1V2_DISABLE_MOSFET)_CFILES = $(CFILES_V1V2)
+$(TARGET_V1V2_DISABLE_CURRENT)_CFILES = $(CFILES_V1V2)
+$(TARGET_V1V2_DISABLE_MOSFET_DISABLE_CURRENT)_CFILES = $(CFILES_V1V2)
+
+$(TARGET)_CFLAGS = $(CFLAGS)
+$(TARGET_DISABLE_MOSFET)_CFLAGS = $(CFLAGS) -DDISABLE_MOSFET
+$(TARGET_DISABLE_CURRENT)_CFLAGS = $(CFLAGS) -DDISABLE_CURRENT
+$(TARGET_DISABLE_MOSFET_DISABLE_CURRENT)_CFLAGS = $(CFLAGS) -DDISABLE_MOSFET -DDISABLE_CURRENT
+$(TARGET_V1V2)_CFLAGS = $(CFLAGS_V1V2)
+$(TARGET_V1V2_DISABLE_MOSFET)_CFLAGS = $(CFLAGS_V1V2) -DDISABLE_MOSFET
+$(TARGET_V1V2_DISABLE_CURRENT)_CFLAGS = $(CFLAGS_V1V2) -DDISABLE_CURRENT
+$(TARGET_V1V2_DISABLE_MOSFET_DISABLE_CURRENT)_CFLAGS = $(CFLAGS_V1V2) -DDISABLE_MOSFET -DDISABLE_CURRENT
+
+ELF_FILES = $(addsuffix .elf,$(TARGETS))
+LST_FILES = $(addsuffix .lst,$(TARGETS))
+MAP_FILES = $(addsuffix .map,$(TARGETS))
+BIN_FILES = $(addsuffix .bin,$(TARGETS))
+HEX_FILES = $(addsuffix .hex,$(TARGETS))
+ASM_FILES = $(addsuffix .asm,$(TARGETS))
+
 .DEFAULT_GOAL := all
 .PHONY: all elf bin hex asm clean size removetemp removeelf help
 
 # Symbolic Targets
 help:
 	@echo "Use the following commands:"
-	@echo "make all        compile and build normal and V1V2 firmware"
-	@echo "make hex        compile and build normal and V1V2 hex files"
-	@echo "make asm        compile and disassemble normal and V1V2 firmware"
-	@echo "make bin        compile and build normal and V1V2 bin files"
+	@echo "make all        compile and build all board and option variants"
+	@echo "make hex        compile and build all hex files"
+	@echo "make asm        compile and disassemble all firmware variants"
+	@echo "make bin        compile and build all bin files"
 	@echo "make clean      remove all build files"
 
-$(TARGET).elf: $(CFILES)
-	@echo "Building $(TARGET).elf ..."
-	@$(CC) -o $@ $^ $(CFLAGS) $(LDFLAGS)
+define BUILD_ELF
+$(1).elf: $$($(1)_CFILES)
+	@echo "Building $(1).elf ..."
+	@$$(CC) -o $$@ $$^ $$($(1)_CFLAGS) $$(LDFLAGS)
+endef
 
-$(TARGET_V1V2).elf: $(CFILES_V1V2)
-	@echo "Building $(TARGET_V1V2).elf ..."
-	@$(CC) -o $@ $^ $(CFLAGS_V1V2) $(LDFLAGS)
+$(foreach target,$(TARGETS),$(eval $(call BUILD_ELF,$(target))))
 
-$(TARGET).lst: $(TARGET).elf
-	@echo "Building $(TARGET).lst ..."
-	@$(OBJDUMP) -S $^ > $(TARGET).lst
+%.lst: %.elf
+	@echo "Building $@ ..."
+	@$(OBJDUMP) -S $^ > $@
 
-$(TARGET_V1V2).lst: $(TARGET_V1V2).elf
-	@echo "Building $(TARGET_V1V2).lst ..."
-	@$(OBJDUMP) -S $^ > $(TARGET_V1V2).lst
+%.map: %.elf
+	@echo "Building $@ ..."
+	@$(OBJDUMP) -t $^ > $@
 
-$(TARGET).map: $(TARGET).elf
-	@echo "Building $(TARGET).map ..."
-	@$(OBJDUMP) -t $^ > $(TARGET).map
+%.bin: %.elf
+	@echo "Building $@ ..."
+	@$(OBJCOPY) -O binary $< $@
 
-$(TARGET_V1V2).map: $(TARGET_V1V2).elf
-	@echo "Building $(TARGET_V1V2).map ..."
-	@$(OBJDUMP) -t $^ > $(TARGET_V1V2).map
+%.hex: %.elf
+	@echo "Building $@ ..."
+	@$(OBJCOPY) -O ihex $< $@
 
-$(TARGET).bin: $(TARGET).elf
-	@echo "Building $(TARGET).bin ..."
-	@$(OBJCOPY) -O binary $< $(TARGET).bin
+%.asm: %.elf
+	@echo "Disassembling to $@ ..."
+	@$(OBJDUMP) -d $< > $@
 
-$(TARGET_V1V2).bin: $(TARGET_V1V2).elf
-	@echo "Building $(TARGET_V1V2).bin ..."
-	@$(OBJCOPY) -O binary $< $(TARGET_V1V2).bin
+all: $(LST_FILES) $(MAP_FILES) $(BIN_FILES) $(HEX_FILES) $(ASM_FILES) size
 
-$(TARGET).hex: $(TARGET).elf
-	@echo "Building $(TARGET).hex ..."
-	@$(OBJCOPY) -O ihex $< $(TARGET).hex
+elf: $(ELF_FILES) size
 
-$(TARGET_V1V2).hex: $(TARGET_V1V2).elf
-	@echo "Building $(TARGET_V1V2).hex ..."
-	@$(OBJCOPY) -O ihex $< $(TARGET_V1V2).hex
+bin: $(BIN_FILES) size removeelf
 
-$(TARGET).asm: $(TARGET).elf
-	@echo "Disassembling to $(TARGET).asm ..."
-	@$(OBJDUMP) -d $(TARGET).elf > $(TARGET).asm
+hex: $(HEX_FILES) size removeelf
 
-$(TARGET_V1V2).asm: $(TARGET_V1V2).elf
-	@echo "Disassembling to $(TARGET_V1V2).asm ..."
-	@$(OBJDUMP) -d $(TARGET_V1V2).elf > $(TARGET_V1V2).asm
-
-all: $(TARGET).lst $(TARGET).map $(TARGET).bin $(TARGET).hex $(TARGET).asm $(TARGET_V1V2).lst $(TARGET_V1V2).map $(TARGET_V1V2).bin $(TARGET_V1V2).hex $(TARGET_V1V2).asm size
-
-elf: $(TARGET).elf $(TARGET_V1V2).elf removetemp size
-
-bin: $(TARGET).bin $(TARGET_V1V2).bin removetemp size removeelf
-
-hex: $(TARGET).hex $(TARGET_V1V2).hex removetemp size removeelf
-
-asm: $(TARGET).asm $(TARGET_V1V2).asm removetemp size removeelf
+asm: $(ASM_FILES) size removeelf
 
 clean:
 	@echo "Cleaning all up ..."
 	@$(CLEAN)
-	@rm -f $(TARGET).elf $(TARGET).bin $(TARGET).hex $(TARGET).asm
-	@rm -f $(TARGET_V1V2).elf $(TARGET_V1V2).bin $(TARGET_V1V2).hex $(TARGET_V1V2).asm
+	@rm -f $(ELF_FILES) $(BIN_FILES) $(HEX_FILES) $(ASM_FILES)
 
-size: $(TARGET).elf $(TARGET_V1V2).elf
+size: $(ELF_FILES)
 	@echo "------------------"
-	@echo "$(TARGET)"
-	@printf "FLASH: "; $(OBJSIZE) -d $(TARGET).elf | awk '/[0-9]/ {print $$1 + $$2 " bytes"}'
-	@printf "SRAM:  "; $(OBJSIZE) -d $(TARGET).elf | awk '/[0-9]/ {print $$2 + $$3 " bytes"}'
-	@echo "$(TARGET_V1V2)"
-	@printf "FLASH: "; $(OBJSIZE) -d $(TARGET_V1V2).elf | awk '/[0-9]/ {print $$1 + $$2 " bytes"}'
-	@printf "SRAM:  "; $(OBJSIZE) -d $(TARGET_V1V2).elf | awk '/[0-9]/ {print $$2 + $$3 " bytes"}'
+	@for target in $(TARGETS); do \
+		echo "$$target"; \
+		printf "FLASH: "; $(OBJSIZE) -d "$$target.elf" | awk '/[0-9]/ {print $$1 + $$2 " bytes"}'; \
+		printf "SRAM:  "; $(OBJSIZE) -d "$$target.elf" | awk '/[0-9]/ {print $$2 + $$3 " bytes"}'; \
+	done
 	@echo "------------------"
 
 removetemp:
@@ -128,7 +138,5 @@ removetemp:
 	@$(CLEAN)
 
 removeelf:
-	@echo "Removing $(TARGET).elf ..."
-	@rm -f $(TARGET).elf
-	@echo "Removing $(TARGET_V1V2).elf ..."
-	@rm -f $(TARGET_V1V2).elf
+	@echo "Removing elf files ..."
+	@rm -f $(ELF_FILES)

@@ -1,4 +1,4 @@
-#include "pin_define_V1V2.h"
+#include "board_define_V1V2.h"
 #include "7seg_button.h"
 
 // ===================================================================================

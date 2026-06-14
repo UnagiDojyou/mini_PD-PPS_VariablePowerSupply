@@ -17,89 +17,24 @@
 
 #include "7seg_button.h"
 #ifndef V1V2
-#include "pin_define.h"
+#include "board_define.h"
 #else
-#include "pin_define_V1V2.h"
+#include "board_define_V1V2.h"
 #endif
 
 // ===================================================================================
 // configuration
 // ===================================================================================
 
-// if MOSFET is not placed, enable this define
-// #define DISABLE_MOSFET
-
-// if SHUNT Registor is not placed, enable this define
-// #define DISABLE_CURRENT
-
 // if DEBUG is defined, calibration is disaled.
 // #define DEBUG
-#define DEBUG_IGNORE_CAL_DATA // Ignore calibration data
-#define DEBUG_VDD 3000 // 3V
-
-#ifndef V1V2
-#define DEBUG_SHUNT_R 320 //10mΩ*32
-#define DEBUG_HIGH_R 10000 //10kΩ
-#define DEBUG_LOW_R 1000 //1kΩ
-#define DEBUG_I_OFFSET 0 // mA@0A
-#else
-#define DEBUG_SHUNT_R 100 // 100mΩ
-#define DEBUG_HIGH_R 12000 // 12kΩ
-#define DEBUG_LOW_R 1500 // 1.5kΩ
-#define DEBUG_I_AMPOFFSET 0 // mA@0A
-#endif
+// #define DEBUG_IGNORE_CAL_DATA // Ignore calibration data
 
 #define MAXCOUNT 200 // Proportional to the interval of voltage,ampar,watt update time
 #define LONGPUSH_SPEED 100 // supeed of long push down/up
 
 // Board Electrical Maximum
 #define INRUSH_TIME 10 // 10ms
-
-#ifndef V1V2
-#if defined(DISABLE_CURRENT) && defined(DISABLE_MOSFET)
-#define MIN_VIN 5000 // 5V
-#define MAX_VIN 30000 // 30V, Zener diode and LDO limit
-#define MAX_IOUT_PULSE 10000 // 10A, 10ms Pulse Current Limit
-#define MAX_IOUT_CONTI 8000 // 8A, Continuous Current Limit, ADC
-#elif defined(DISABLE_CURRENT)
-#define MIN_VIN 3100 // 3.1V, LDO and CH32X035 limit
-#define MAX_VIN 24000 // 30V, Zener diode and LDO limit
-#define MAX_IOUT_PULSE 10000 // 10A, 10ms Pulse Current Limit, MOSFET limit
-#define MAX_IOUT_CONTI 8000 // 8A, Continuous Current Limit, MOSFET limit
-#elif defined(DISABLE_MOSFET)
-#define MIN_VIN 5000 // 5V
-#define MAX_VIN 30000 // 30V, Zener diode and LDO limit
-#define MAX_IOUT_PULSE 10000 // 10A, 10ms Pulse Current Limit
-#define MAX_IOUT_CONTI 8000 // 8A, Continuous Current Limit, MOSFET limit
-#else // normal
-#define MIN_VIN 3100 // 3.1V, LDO and CH32X035 limit
-#define MAX_VIN 24000 // 24V, Zener diode limit
-#define MAX_IOUT_PULSE 10000 // 10A, 10ms Pulse Current Limit, MOSFET limit
-#define MAX_IOUT_CONTI 8000 // 8A, Continuous Current Limit, MOSFET limit
-#endif
-#else // for V1V2
-#if defined(DISABLE_CURRENT) && defined(DISABLE_MOSFET)
-#define MIN_VIN 5000 // 5V
-#define MAX_VIN 24000 // 24V, Zener diode limit
-#define MAX_IOUT_PULSE 30000 // 30A, 10ms Pulse Current Limit
-#define MAX_IOUT_CONTI 6000 // 6A, Continuous Current Limit, Temperature Limit
-#elif defined(DISABLE_CURRENT)
-#define MIN_VIN 3100 // 3.1V, LDO and CH32X035 limit
-#define MAX_VIN 24000 // 24V, Zener diode limit
-#define MAX_IOUT_PULSE 10000 // 10A, 10ms Pulse Current Limit, AO3400 limit
-#define MAX_IOUT_CONTI 3500 // 3.5A, Continuous Current Limit, AO3400 limit
-#elif defined(DISABLE_MOSFET)
-#define MIN_VIN 5000 // 5V
-#define MAX_VIN 24000 // 24V, Zener diode limit
-#define MAX_IOUT_PULSE 10000 // 10A, 10ms Pulse Current Limit
-#define MAX_IOUT_CONTI 3000 // 3.0A, Continuous Current Limit, Temperature Limit
-#else // normal
-#define MIN_VIN 3100 // 3.1V, LDO and CH32X035 limit
-#define MAX_VIN 24000 // 24V, Zener diode limit
-#define MAX_IOUT_PULSE 10000 // 10A, 10ms Pulse Current Limit, AO3400 limit
-#define MAX_IOUT_CONTI 2500 // 2.5A, Continuous Current Limit, Temperature Limit
-#endif
-#endif
 
 // over current protection
 #define LIMIT_CURRENT 500 // set_current + 500mA
@@ -158,8 +93,8 @@
 #define STEP_VOLTAGE_LONG 300
 #define STEP_CURRENT_SHORT 100 // 100mA/(one button push)
 #define STEP_CURRENT_LONG 100
-#define STEP_VOLTAGE_LONG_NEG 1000 // Send pps when this value changes while holding down the button
-#define STEP_CURRENT_LONG_NEG 500 // Send pps when this value changes while holding down the button
+#define STEP_VOLTAGE_LONG_NEG 500 // Send pps when this value changes while holding down the button
+#define STEP_CURRENT_LONG_NEG 200 // Send pps when this value changes while holding down the button
 
 // time out of triger menu
 #define TRIGGER_TIMEOUT 2000 // 2second
@@ -434,9 +369,11 @@ void manageOnOff() {
   if (mode == MODE_PPS) {
     if (!PIN_read(PIN_ONOFF) && output && !invalid_pd) { // OFF -> ON
       PIN_high(PIN_ONOFF);
+      DLY_ms(10);
       invalid_pd = !PD_setPDOwithCurrent(pdonum, set_Voltage, set_Current);
     } else if (PIN_read(PIN_ONOFF) && !output) { // ON -> OFF
       PIN_low(PIN_ONOFF);
+      DLY_ms(10);
       invalid_pd = !PD_setPDOwithCurrent(pdonum, min_Voltage, set_Current);
     } else if ((set_Voltage != PD_getVoltage() || set_Current != PD_getCurrent()) && output && !invalid_pd) { // change Voltage or Current while output
       invalid_pd = !PD_setPDOwithCurrent(pdonum, set_Voltage, set_Current);
@@ -1188,8 +1125,10 @@ void calmode() {
   uint32_t sum = 0;
   uint32_t aveV1 = 0;
   uint32_t aveV2 = 0;
+#ifndef DISABLE_CURRENT
   uint32_t aveA1 = 0;
   uint32_t aveA2 = 0;
+#endif
 
   // calivration 5.00V
   SEG_setNumber(CALV1, false);

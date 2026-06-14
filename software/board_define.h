@@ -7,6 +7,36 @@ extern "C" {
 
 #include <system.h>
 
+// Board Components
+#define DEBUG_VDD 3000 // 3V
+#define DEBUG_SHUNT_R 320 //10mΩ*32
+#define DEBUG_HIGH_R 10000 //10kΩ
+#define DEBUG_LOW_R 1000 //1kΩ
+#define DEBUG_I_OFFSET 0 // mA@0A
+
+// Board Electrical Maximum
+#if defined(DISABLE_CURRENT) && defined(DISABLE_MOSFET)
+#define MIN_VIN 5000 // 5V
+#define MAX_VIN 30000 // 30V, Zener diode and LDO limit
+#define MAX_IOUT_PULSE 10000 // 10A, 10ms Pulse Current Limit
+#define MAX_IOUT_CONTI 8000 // 8A, Continuous Current Limit, ADC
+#elif defined(DISABLE_CURRENT)
+#define MIN_VIN 3100 // 3.1V, LDO and CH32X035 limit
+#define MAX_VIN 24000 // 30V, Zener diode and LDO limit
+#define MAX_IOUT_PULSE 10000 // 10A, 10ms Pulse Current Limit, MOSFET limit
+#define MAX_IOUT_CONTI 8000 // 8A, Continuous Current Limit, MOSFET limit
+#elif defined(DISABLE_MOSFET)
+#define MIN_VIN 5000 // 5V
+#define MAX_VIN 30000 // 30V, Zener diode and LDO limit
+#define MAX_IOUT_PULSE 10000 // 10A, 10ms Pulse Current Limit
+#define MAX_IOUT_CONTI 8000 // 8A, Continuous Current Limit, MOSFET limit
+#else // normal
+#define MIN_VIN 3100 // 3.1V, LDO and CH32X035 limit
+#define MAX_VIN 24000 // 24V, Zener diode limit
+#define MAX_IOUT_PULSE 10000 // 10A, 10ms Pulse Current Limit, MOSFET limit
+#define MAX_IOUT_CONTI 8000 // 8A, Continuous Current Limit, MOSFET limit
+#endif
+
 // PIN assign
 #define PIN_V_ADC PB0
 #define PIN_I_ADC PA4
