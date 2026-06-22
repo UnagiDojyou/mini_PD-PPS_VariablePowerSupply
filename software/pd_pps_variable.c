@@ -1,6 +1,6 @@
 // ===================================================================================
 // mini PD-PPS VariablePowerSupply firmware
-#define VERSION 940 // 0.94
+#define VERSION 950 // 0.95
 // Author: Unagi Dojyou
 // based on https://github.com/wagiminator
 // License: http://creativecommons.org/licenses/by-sa/3.0/
@@ -473,7 +473,7 @@ int main(void) {
   PIN_output(PIN_ONOFF);
   PIN_low(PIN_ONOFF);
   CVCC_OFF();
- 
+
   PIN_output(PIN_SEG_A1);
   PIN_output(PIN_SEG_A2);
   PIN_output(PIN_SEG_A3);
@@ -673,27 +673,28 @@ void ppsmode_setup() {
   set_Voltage = 0;
   set_Current = 0;
   for (uint8_t i = 1; i <= PD_getPDONum(); i++) {
-    if (i <= PD_getFixedNum());
-    else if (max_Voltage < PD_getPDOMaxVoltage(i)) { // select more high voltage
-      if (PD_getPDOMaxCurrent(i) <= PPS_MAX_CURRENT) { // set Max Current
-        max_Current = PD_getPDOMaxCurrent(i);
-      } else {
-        max_Current = PPS_MAX_CURRENT;
+    if (PD_getPDOType(i) == PDO_TYPE_PPS){
+      if (max_Voltage < PD_getPDOMaxVoltage(i)) { // select more high voltage
+        if (PD_getPDOMaxCurrent(i) <= PPS_MAX_CURRENT) { // set Max Current
+          max_Current = PD_getPDOMaxCurrent(i);
+        } else {
+          max_Current = PPS_MAX_CURRENT;
+        }
+        if (PD_getPDOMinVoltage(i) >= PPS_MIN_VOLTAGE) { // set Min Voltage
+          min_Voltage = PD_getPDOMinVoltage(i);
+        } else {
+          min_Voltage = PPS_MIN_VOLTAGE;
+        }
+        if (PD_getPDOMaxVoltage(i) <= PPS_MAX_VOLTAGE) { // set Max Voltage
+          max_Voltage = PD_getPDOMaxVoltage(i);
+        } else {
+          max_Voltage = PPS_MAX_VOLTAGE;
+        }
+        set_Voltage = PPS_DEFAULT_VOLTAGE;
+        set_Current = max_Current;
+        min_Current = PPS_MIN_CURRENT;
+        pdonum = i;
       }
-      if (PD_getPDOMinVoltage(i) >= PPS_MIN_VOLTAGE) { // set Min Voltage
-        min_Voltage = PD_getPDOMinVoltage(i);
-      } else {
-        min_Voltage = PPS_MIN_VOLTAGE;
-      }
-      if (PD_getPDOMaxVoltage(i) <= PPS_MAX_VOLTAGE) { // set Max Voltage
-        max_Voltage = PD_getPDOMaxVoltage(i);
-      } else {
-        max_Voltage = PPS_MAX_VOLTAGE;
-      }
-      set_Voltage = PPS_DEFAULT_VOLTAGE;
-      set_Current = max_Current;
-      min_Current = PPS_MIN_CURRENT;
-      pdonum = i;
     }
   }
 
@@ -765,25 +766,26 @@ void ppsmode_loop() {
     if (PD_Loop()) { // change PDO
       pdonum = 0;
       for (uint8_t i = 1; i <= PD_getPDONum(); i++) {
-        if (i <= PD_getFixedNum());
-        else if (PD_getPDOMaxCurrent(i) >= set_Current && PD_getPDOMaxVoltage(i) >= set_Voltage) { // maintain output
-          if (PD_getPDOMaxCurrent(i) <= PPS_MAX_CURRENT) { // set Max Current
-            max_Current = PD_getPDOMaxCurrent(i);
-          } else {
-            max_Current = PPS_MAX_CURRENT;
+        if (PD_getPDOType(i) == PDO_TYPE_PPS) {
+          if (PD_getPDOMaxCurrent(i) >= set_Current && PD_getPDOMaxVoltage(i) >= set_Voltage) { // maintain output
+            if (PD_getPDOMaxCurrent(i) <= PPS_MAX_CURRENT) { // set Max Current
+              max_Current = PD_getPDOMaxCurrent(i);
+            } else {
+              max_Current = PPS_MAX_CURRENT;
+            }
+            if (PD_getPDOMinVoltage(i) >= PPS_MIN_VOLTAGE) { // set Min Voltage
+              min_Voltage = PD_getPDOMinVoltage(i);
+            } else {
+              min_Voltage = PPS_MIN_VOLTAGE;
+            }
+            if (PD_getPDOMaxVoltage(i) <= PPS_MAX_VOLTAGE) { // set Max Voltage
+              max_Voltage = PD_getPDOMaxVoltage(i);
+            } else {
+              max_Voltage = PPS_MAX_VOLTAGE;
+            }
+            min_Current = PPS_MIN_CURRENT;
+            pdonum = i;
           }
-          if (PD_getPDOMinVoltage(i) >= PPS_MIN_VOLTAGE) { // set Min Voltage
-            min_Voltage = PD_getPDOMinVoltage(i);
-          } else {
-            min_Voltage = PPS_MIN_VOLTAGE;
-          }
-          if (PD_getPDOMaxVoltage(i) <= PPS_MAX_VOLTAGE) { // set Max Voltage
-            max_Voltage = PD_getPDOMaxVoltage(i);
-          } else {
-            max_Voltage = PPS_MAX_VOLTAGE;
-          }
-          min_Current = PPS_MIN_CURRENT;
-          pdonum = i;
         }
       }
       if (!pdonum) {
@@ -914,17 +916,22 @@ void ppsmode_loop() {
 // fix mode
 // ===================================================================================
 void fixmode_setup() {
+  if (PD_getEPRCapable()) {
+    DLY_ms(100);
+    if (!PD_setEPRMode(1)) {
+    }
+  }
   // find pdo with FIX_DEFAULT_VOLTAGE
   pdonum = 1;
-  for (uint8_t i = 1; i <= PD_getFixedNum(); i++) { // search start PDO
-    if (PD_getPDOVoltage(i) == FIX_DEFAULT_VOLTAGE) {
+  for (uint8_t i = 1; i <= PD_getPDONum(); i++) { // search start PDO
+    if (PD_getPDOType(i) == PDO_TYPE_FIXED && PD_getPDOMaxVoltage(i) == FIX_DEFAULT_VOLTAGE) {
       pdonum = i;
       break;
-    } else if (FIX_MIN_VOLTAGE <= PD_getPDOVoltage(i) && PD_getPDOVoltage(i) <= FIX_MAX_VOLTAGE && PD_getPDOVoltage(i) < PD_getPDOVoltage(pdonum)) {
+    } else if (FIX_MIN_VOLTAGE <= PD_getPDOMaxVoltage(i) && PD_getPDOMaxVoltage(i) <= FIX_MAX_VOLTAGE && PD_getPDOMaxVoltage(i) < PD_getPDOMaxVoltage(pdonum)) {
       pdonum = i;
     }
   }
-  set_Voltage = PD_getPDOVoltage(pdonum);
+  set_Voltage = PD_getPDOMaxVoltage(pdonum);
   if (PD_getPDOMaxCurrent(pdonum) <= FIX_MAX_CURRENT) {
     set_Current = PD_getPDOMaxCurrent(pdonum);
   } else {
@@ -935,7 +942,7 @@ void fixmode_setup() {
   count = 0;
   dispmode = DISP_VOLTAGE;
   output = false;
-  invalid_pd = !PD_setVoltage(set_Voltage);
+  invalid_pd = !PD_setPDOwithCurrent(pdonum, set_Voltage, set_Current);
   fixmode_loop();
 }
 
@@ -957,13 +964,13 @@ void fixmode_loop() {
 
     if (PD_Loop()) { // pdo change
       pdonum = 0;
-      for (uint8_t i = 1; i <= PD_getFixedNum(); i++) {
-        if (PD_getPDOVoltage(i) == set_Voltage) {
+      for (uint8_t i = 1; i <= PD_getPDONum(); i++) {
+        if (PD_getPDOType(i) == PDO_TYPE_FIXED && PD_getPDOMaxVoltage(i) == set_Voltage) {
           pdonum = i;
         }
       }
-      for (uint8_t i = 1; i <= PD_getFixedNum(); i++) {
-        if (!pdonum && PD_getPDOVoltage(i) == FIX_DEFAULT_VOLTAGE) {
+      for (uint8_t i = 1; i <= PD_getPDONum(); i++) {
+        if (!pdonum && PD_getPDOType(i) == PDO_TYPE_FIXED && PD_getPDOMaxVoltage(i) == FIX_DEFAULT_VOLTAGE) {
           pdonum = i;
         }
       }
@@ -971,20 +978,20 @@ void fixmode_loop() {
         pdonum = 1;
       }
 
-      if (PD_getPDOVoltage(pdonum) == set_Voltage && PD_getPDOMaxCurrent(pdonum) > Current) {
+      if (PD_getPDOMaxVoltage(pdonum) == set_Voltage && PD_getPDOMaxCurrent(pdonum) > Current) {
         // countiue output
       } else {
         output = false;
         PIN_low(PIN_ONOFF);
       }
 
-      set_Voltage = PD_getPDOVoltage(pdonum);
+      set_Voltage = PD_getPDOMaxVoltage(pdonum);
       if (PD_getPDOMaxCurrent(pdonum) <= FIX_MAX_CURRENT){
         set_Current = PD_getPDOMaxCurrent(pdonum);
       } else {
         set_Current = FIX_MAX_CURRENT;
       }
-      invalid_pd = !PD_setVoltage(set_Voltage);
+      invalid_pd = !PD_setPDOwithCurrent(pdonum, set_Voltage, set_Current);
     }
 
     switch (BUTTON_read()) {
@@ -997,17 +1004,27 @@ void fixmode_loop() {
           output = false;
           PIN_low(PIN_ONOFF);
         } else if (pdonum > 1) {
-          pdonum--;
-          if (FIX_MIN_VOLTAGE <= PD_getPDOVoltage(pdonum) && PD_getPDOVoltage(pdonum) <= FIX_MAX_VOLTAGE) {
-            set_Voltage = PD_getPDOVoltage(pdonum);
+          for (uint8_t i = pdonum-1; i >= 1; i--) {
+            if (PD_getPDOType(i) == PDO_TYPE_FIXED) {
+              pdonum = i;
+              break;
+            }
+          }
+          if (FIX_MIN_VOLTAGE <= PD_getPDOMaxVoltage(pdonum) && PD_getPDOMaxVoltage(pdonum) <= FIX_MAX_VOLTAGE) {
+            set_Voltage = PD_getPDOMaxVoltage(pdonum);
             if (PD_getPDOMaxCurrent(pdonum) <= FIX_MAX_CURRENT){
               set_Current = PD_getPDOMaxCurrent(pdonum);
             } else {
               set_Current = FIX_MAX_CURRENT;
             }
-            invalid_pd = !PD_setVoltage(set_Voltage);
+            invalid_pd = !PD_setPDOwithCurrent(pdonum, set_Voltage, set_Current);
           } else {
-            pdonum++;
+            for (uint8_t i = pdonum+1; i <= PD_getPDONum(); i++) {
+              if (PD_getPDOType(i) == PDO_TYPE_FIXED) {
+                pdonum = i;
+                break;
+              }
+            }
           }
         }
         break;
@@ -1016,17 +1033,27 @@ void fixmode_loop() {
           output = false;
           PIN_low(PIN_ONOFF);
         } else if (pdonum < PD_getFixedNum()) {
-          pdonum++;
-          if (FIX_MIN_VOLTAGE <= PD_getPDOVoltage(pdonum) && PD_getPDOVoltage(pdonum) <= FIX_MAX_VOLTAGE) {
-            set_Voltage = PD_getPDOVoltage(pdonum);
+          for (uint8_t i = pdonum+1; i <= PD_getPDONum(); i++) {
+            if (PD_getPDOType(i) == PDO_TYPE_FIXED) {
+              pdonum = i;
+              break;
+            }
+          }
+          if (FIX_MIN_VOLTAGE <= PD_getPDOMaxVoltage(pdonum) && PD_getPDOMaxVoltage(pdonum) <= FIX_MAX_VOLTAGE) {
+            set_Voltage = PD_getPDOMaxVoltage(pdonum);
             if (PD_getPDOMaxCurrent(pdonum) <= FIX_MAX_CURRENT){
               set_Current = PD_getPDOMaxCurrent(pdonum);
             } else {
               set_Current = FIX_MAX_CURRENT;
             }
-            invalid_pd = !PD_setVoltage(set_Voltage);
+            invalid_pd = !PD_setPDOwithCurrent(pdonum, set_Voltage, set_Current);
           } else {
-            pdonum--;
+            for (uint8_t i = pdonum-1; i >= 1; i--) {
+              if (PD_getPDOType(i) == PDO_TYPE_FIXED) {
+                pdonum = i;
+                break;
+              }
+            }
           }
         }
         break;
@@ -1245,26 +1272,32 @@ void triggermode_pdosearch() {
   pdonum = 0; // No pdonum selected
   // select pdo
   for (uint8_t i = 1; i <= PD_getPDONum(); i++) {
-    if (i <= PD_getFixedNum()) { // fix
-      if (PD_getPDOVoltage(i) == trigger_voltage && trigger_current == UINT16_MAX) {
+    if (PD_getPDOType(i) == PDO_TYPE_FIXED) { // fix
+      if (PD_getPDOMaxVoltage(i) == trigger_voltage && trigger_current == UINT16_MAX) {
         set_Voltage = trigger_voltage;
         set_Current = PD_getPDOMaxCurrent(i);
         pdonum = i;
         mode = MODE_FIX;
       }
-    } else if (PD_getPDOMinVoltage(i) <= trigger_voltage && trigger_voltage <= PD_getPDOMaxVoltage(i) &&
-    (trigger_current <= PD_getPDOMaxCurrent(i) || trigger_current == UINT16_MAX)) { // pps
-      if ((pdonum && PD_getPDOMaxCurrent(i) > PD_getPDOMaxCurrent(pdonum)) || !pdonum) { // select higher current pdo
-        set_Voltage = trigger_voltage;
-        min_Voltage = PD_getPDOMinVoltage(i);
-        if (trigger_current == UINT16_MAX) {
-          set_Current = PD_getPDOMaxCurrent(i);
-        } else {
-          set_Current = trigger_current;
+    } else if (PD_getPDOType(i) == PDO_TYPE_PPS) { // PPS 
+      if (PD_getPDOMinVoltage(i) <= trigger_voltage && trigger_voltage <= PD_getPDOMaxVoltage(i) &&
+        (trigger_current <= PD_getPDOMaxCurrent(i) || trigger_current == UINT16_MAX)) { // pps
+        if ((pdonum && PD_getPDOMaxCurrent(i) > PD_getPDOMaxCurrent(pdonum)) || !pdonum) { // select higher current pdo
+          set_Voltage = trigger_voltage;
+          min_Voltage = PD_getPDOMinVoltage(i);
+          if (trigger_current == UINT16_MAX) {
+            set_Current = PD_getPDOMaxCurrent(i);
+          } else {
+            set_Current = trigger_current;
+          }
+          pdonum = i;
+          mode = MODE_PPS;
         }
-        pdonum = i;
-        mode = MODE_PPS;
       }
+    } else if (PD_getPDOType(i) == PDO_TYPE_SPR_AVS) { // SPR AVS
+      // To Do
+    } else if (PD_getPDOType(i) == PDO_TYPE_EPR_AVS) { // EPR AVS
+      // To Do
     }
   }
 }

@@ -17,22 +17,22 @@ extern "C" {
 // Board Electrical Maximum
 #if defined(DISABLE_CURRENT) && defined(DISABLE_MOSFET)
 #define MIN_VIN 5000 // 5V
-#define MAX_VIN 30000 // 30V, Zener diode and LDO limit
+#define MAX_VIN 30000 // 30V, Zener diode limit and LDO limit
 #define MAX_IOUT_PULSE 10000 // 10A, 10ms Pulse Current Limit
 #define MAX_IOUT_CONTI 8000 // 8A, Continuous Current Limit, ADC
 #elif defined(DISABLE_CURRENT)
 #define MIN_VIN 3100 // 3.1V, LDO and CH32X035 limit
-#define MAX_VIN 24000 // 30V, Zener diode and LDO limit
+#define MAX_VIN 30000 // 30V, Zener diode limit and LDO limit
 #define MAX_IOUT_PULSE 10000 // 10A, 10ms Pulse Current Limit, MOSFET limit
 #define MAX_IOUT_CONTI 8000 // 8A, Continuous Current Limit, MOSFET limit
 #elif defined(DISABLE_MOSFET)
 #define MIN_VIN 5000 // 5V
-#define MAX_VIN 30000 // 30V, Zener diode and LDO limit
+#define MAX_VIN 30000 // 30V, Zener diode limit and LDO limit
 #define MAX_IOUT_PULSE 10000 // 10A, 10ms Pulse Current Limit
 #define MAX_IOUT_CONTI 8000 // 8A, Continuous Current Limit, MOSFET limit
 #else // normal
 #define MIN_VIN 3100 // 3.1V, LDO and CH32X035 limit
-#define MAX_VIN 24000 // 24V, Zener diode limit
+#define MAX_VIN 30000 // 30V, Zener diode limit and LDO limit
 #define MAX_IOUT_PULSE 10000 // 10A, 10ms Pulse Current Limit, MOSFET limit
 #define MAX_IOUT_CONTI 8000 // 8A, Continuous Current Limit, MOSFET limit
 #endif
