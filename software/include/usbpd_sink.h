@@ -4,22 +4,37 @@
 //
 // Functions available:
 // --------------------
-// PD_connect()             Initialize USB-PD and connect, returns 0 if failed
-// PD_negotiate()           Negotiate current settings, returns 0 if failed
-// PD_setVoltage(mV)        Request specified voltage in millivolts, returns 0 if failed
+// PD_connect()                       Initialize USB-PD and connect, returns 0 if failed
+// PD_negotiate()                     Negotiate current settings, returns 0 if failed
+// PD_Loop()                          Main loop handler, returns 1 when PDOs are updated
+// PD_setVoltage(mV)                  Request specified voltage, returns 0 if failed
+// PD_setPPS(mV, mA)                  Request specified PPS voltage/current, returns 0 if failed
+// PD_setPDO(p, mV)                   Request specified PDO and voltage, returns 0 if failed
+// PD_setPDOwithCurrent(p, mV, mA)    Request specified PDO, voltage and current, returns 0 if failed
+// PD_setEPRMode(enable)              Enter or exit EPR Mode, returns 0 if failed
 //
-// PD_getPDONum()           Get total number of PDOs
-// PD_getFixedNum()         Get number of fixed power PDOs
-// PD_getPPSNum()           Get number of programmable power PDOs
+// PD_getEPRCapable()                 Check if Source advertises EPR Mode capable
+// PD_getEPRMode()                    Get current EPR Mode status
+// PD_getRevision()                   Get PD Specification Revision (1, 2 or 3)
 //
-// PD_getPDOVoltage(p)      Get voltage of specified fixed power PDO (1..PD_getFixedNum())
-// PD_getPDOMinVoltage(p)   Get min voltage of specified PDO (p = 1..PD_getPDONum())
-// PD_getPDOMaxVoltage(p)   Get max voltage of specified PDO (p = 1..PD_getPDONum())
-// PD_getPDOMaxCurrent(p)   Get max current of specified PDO (p = 1..PD_getPDONum())
+// PD_getPDONum()                     Get total number of PDOs
+// PD_getFixedNum()                   Get number of fixed power PDOs
+// PD_getPPSNum()                     Get number of PPS PDOs
+// PD_getSPRAVSNum()                  Get number of SPR AVS PDOs
+// PD_getEPRAVSNum()                  Get number of EPR AVS PDOs
+// PD_getPDOType(p)                   Get type of specified PDO
+// PD_getPDOMinVoltage(p)             Get minimum voltage of specified PDO
+// PD_getPDOMaxVoltage(p)             Get maximum voltage of specified PDO
+// PD_getPDOMaxCurrent(p)             Get max current of specified PDO
+// PD_getPDOMaxCurrentWithVoltage(p, mV) Get max current of specified PDO at voltage
+// PD_getPDOPower(p)                  Get max power of specified PDO
+// PD_getPPSPowerLimited(p)           Get PPS Power Limited flag
 //
-// PD_getPDO()              Get active PDO
-// PD_getVoltage()          Get active voltage
-// PD_getCurrent()          Get active current
+// PD_getPDO()                        Get active PDO
+// PD_getVoltage()                    Get active voltage
+// PD_getCurrent()                    Get active current
+// PD_getMismatch()                   Get Capability Mismatch flag
+// PD_setMismatch(mismatch)           Set Capability Mismatch flag for next request
 //
 // Reference:               https://github.com/openwch/ch32x035
 // 2023 by Stefan Wagner:   https://github.com/wagiminator
@@ -32,7 +47,7 @@ extern "C" {
 #endif
 
 #include "config.h"
-#include "system.h"
+#include <system.h>
 #include "usbpd.h"
 
 // ===================================================================================
@@ -111,6 +126,8 @@ typedef enum {
   CC_GET_SOURCE_CAP,
   CC_WAIT_SRC_CAP,
   CC_EPR_MODE_ENTRY,
+  CC_EPR_MODE_EXIT,
+  CC_EPR_EXIT_WAIT_SRC_CAP,
   CC_SEND_CHUNK_REQUEST,
 } cc_state_t;
 
@@ -126,7 +143,8 @@ typedef enum {
   PD_EPR_MODE_SPR = 0,
   PD_EPR_MODE_ENTERING,
   PD_EPR_MODE_ENTER_ACK,
-  PD_EPR_MODE_EPR
+  PD_EPR_MODE_EPR,
+  PD_EPR_MODE_EXITING
 } PD_epr_mode_t;
 
 typedef struct {
@@ -159,6 +177,7 @@ typedef struct {
   volatile uint8_t    SinkMessageID;
   volatile uint8_t    SinkGoodCRCOver;
   volatile uint8_t    SourceGoodCRCOver;
+  volatile uint8_t    SourceCapIsEPR;
   volatile uint8_t    EPRModeCapable;
   volatile PD_epr_mode_t EPR_Mode;
   volatile uint8_t    EPR_NextChunk;    // Next Chunk Number to request
@@ -176,7 +195,7 @@ uint8_t  PD_setVoltage(uint16_t voltage);       // Set specified voltage (in mil
 
 uint8_t  PD_setPPS(uint16_t voltage,uint16_t current); // Set specified voltage and current (in millivolts and milliampere)
 
-uint8_t  PD_setEPRMode(uint8_t enable);         // Enter EPR Mode, exit is not supported yet
+uint8_t  PD_setEPRMode(uint8_t enable);         // Enter or exit EPR Mode
 uint8_t  PD_getEPRCapable(void);                // Check if Source advertises EPR Mode capable
 PD_epr_mode_t PD_getEPRMode(void);              // Get current EPR Mode status
 

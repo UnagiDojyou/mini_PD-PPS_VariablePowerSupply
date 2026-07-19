@@ -184,6 +184,7 @@ uint16_t max_Current = 0;
 uint32_t Voltage = 0;
 uint32_t Current = 0;
 uint8_t pdonum = 0;
+uint8_t default_pdonum = 0;
 uint8_t dispmode = DISP_VOLTAGE;
 bool invalid_pd = true;
 bool output = false; // OFF
@@ -380,6 +381,18 @@ void manageOnOff() {
     } else if ((set_Current != PD_getCurrent()) && !output) { // change Current while setting
       invalid_pd = !PD_setPDOwithCurrent(pdonum, min_Voltage, set_Current);
     }
+  } else if (mode == MODE_FIX) {
+    if (!PIN_read(PIN_ONOFF) && output && !invalid_pd) { // OFF -> ON
+      invalid_pd = !PD_setPDOwithCurrent(pdonum, set_Voltage, set_Current);
+      DLY_ms(100);
+      if (!invalid_pd) {
+        PIN_high(PIN_ONOFF);
+      }
+    } else if (PIN_read(PIN_ONOFF) && !output) { // ON -> OFF
+      PIN_low(PIN_ONOFF);
+      DLY_ms(10);
+      invalid_pd = !PD_setPDO(default_pdonum, FIX_DEFAULT_VOLTAGE);
+    }
   } else if (output && !invalid_pd) {
     PIN_high(PIN_ONOFF);
   } else {
@@ -493,6 +506,11 @@ int main(void) {
   PD_connect();
   if (PD_getPDONum()) {
     PD_setVoltage(5000);
+    DLY_ms(100);
+    if (PD_getEPRCapable()) {
+      if (!PD_setEPRMode(1)) {
+      }
+    }
   }
   while(1) {
     selectStartMode();
@@ -665,6 +683,9 @@ void mode_menu() {
 // pps mode
 // ===================================================================================
 void ppsmode_setup() {
+  if (PD_getEPRMode()) {
+    PD_setEPRMode(0);
+  }
   pdonum = 0;
   max_Voltage = 0;
   min_Voltage = 0;
@@ -916,19 +937,17 @@ void ppsmode_loop() {
 // fix mode
 // ===================================================================================
 void fixmode_setup() {
-  if (PD_getEPRCapable()) {
-    DLY_ms(100);
-    if (!PD_setEPRMode(1)) {
-    }
-  }
   // find pdo with FIX_DEFAULT_VOLTAGE
   pdonum = 1;
+  default_pdonum = 1;
   for (uint8_t i = 1; i <= PD_getPDONum(); i++) { // search start PDO
     if (PD_getPDOType(i) == PDO_TYPE_FIXED && PD_getPDOMaxVoltage(i) == FIX_DEFAULT_VOLTAGE) {
       pdonum = i;
+      default_pdonum = i;
       break;
     } else if (FIX_MIN_VOLTAGE <= PD_getPDOMaxVoltage(i) && PD_getPDOMaxVoltage(i) <= FIX_MAX_VOLTAGE && PD_getPDOMaxVoltage(i) < PD_getPDOMaxVoltage(pdonum)) {
       pdonum = i;
+      default_pdonum = i;
     }
   }
   set_Voltage = PD_getPDOMaxVoltage(pdonum);
@@ -970,8 +989,11 @@ void fixmode_loop() {
         }
       }
       for (uint8_t i = 1; i <= PD_getPDONum(); i++) {
-        if (!pdonum && PD_getPDOType(i) == PDO_TYPE_FIXED && PD_getPDOMaxVoltage(i) == FIX_DEFAULT_VOLTAGE) {
-          pdonum = i;
+        if (PD_getPDOType(i) == PDO_TYPE_FIXED && PD_getPDOMaxVoltage(i) == FIX_DEFAULT_VOLTAGE) {
+          default_pdonum = i;
+          if (pdonum == 0) {
+            pdonum = i;
+          }
         }
       }
       if (!pdonum) {
@@ -991,7 +1013,12 @@ void fixmode_loop() {
       } else {
         set_Current = FIX_MAX_CURRENT;
       }
-      invalid_pd = !PD_setPDOwithCurrent(pdonum, set_Voltage, set_Current);
+      
+      if (output) {
+        invalid_pd = !PD_setPDOwithCurrent(pdonum, set_Voltage, set_Current);
+      } else {
+        invalid_pd = !PD_setPDO(default_pdonum, set_Voltage);
+      }
     }
 
     switch (BUTTON_read()) {
@@ -1002,7 +1029,6 @@ void fixmode_loop() {
       case BUTTON_DOWN_SHORT:
         if (output) {
           output = false;
-          PIN_low(PIN_ONOFF);
         } else if (pdonum > 1) {
           for (uint8_t i = pdonum-1; i >= 1; i--) {
             if (PD_getPDOType(i) == PDO_TYPE_FIXED) {
@@ -1017,7 +1043,6 @@ void fixmode_loop() {
             } else {
               set_Current = FIX_MAX_CURRENT;
             }
-            invalid_pd = !PD_setPDOwithCurrent(pdonum, set_Voltage, set_Current);
           } else {
             for (uint8_t i = pdonum+1; i <= PD_getPDONum(); i++) {
               if (PD_getPDOType(i) == PDO_TYPE_FIXED) {
@@ -1031,7 +1056,6 @@ void fixmode_loop() {
       case BUTTON_UP_SHORT:
         if (output) {
           output = false;
-          PIN_low(PIN_ONOFF);
         } else if (pdonum < PD_getFixedNum()) {
           for (uint8_t i = pdonum+1; i <= PD_getPDONum(); i++) {
             if (PD_getPDOType(i) == PDO_TYPE_FIXED) {
@@ -1046,7 +1070,6 @@ void fixmode_loop() {
             } else {
               set_Current = FIX_MAX_CURRENT;
             }
-            invalid_pd = !PD_setPDOwithCurrent(pdonum, set_Voltage, set_Current);
           } else {
             for (uint8_t i = pdonum-1; i >= 1; i--) {
               if (PD_getPDOType(i) == PDO_TYPE_FIXED) {
@@ -1074,9 +1097,7 @@ void fixmode_loop() {
         if (output && dispmode < DISP_WATT) dispmode = DISP_WATT;
         break;
       case BUTTON_OP_SHORT:
-        if (!invalid_pd) {
-          output =! output;
-        }
+        output =! output;
         break;
       default:
         break;
