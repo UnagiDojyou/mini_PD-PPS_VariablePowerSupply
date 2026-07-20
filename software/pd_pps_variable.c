@@ -72,6 +72,11 @@
 #define FIX_MIN_VOLTAGE MIN_VIN
 #define FIX_MAX_VOLTAGE (MAX_VIN - LIMIT_VOLTAGE)
 #define FIX_MAX_CURRENT (MAX_IOUT_CONTI - LIMIT_CURRENT)
+#define SPRAVS_MIN_VOLTAGE 9000 // 9V
+#define SPRAVS_MAX_VOLTAGE 20000 // 20V
+#define EPRAVS_MIN_VOLTAGE 15000 // 15V
+#define AVS_MAX_CURRENT (MAX_IOUT_CONTI - LIMIT_CURRENT)
+
 #define TRIGGER_MAX_VOLTAGE 21000 // 21V
 #if MIN_VIN > 3300
 #define TRIGGER_MIN_VOLTAGE 5000 // 5.0V
@@ -115,6 +120,18 @@
 #define MODE_SETTRG 5
 #define MODE_DELTRG 6
 #define MODE_VER 7
+#define MODE_AVS 8
+
+// mode list
+#define MODE_LIST_5V 0
+#define MODE_LIST_FIX 1
+#define MODE_LIST_PPS 2
+#define MODE_LIST_CAL 3
+#define MODE_LIST_TRG 4
+#define MODE_LIST_SETTRG 5
+#define MODE_LIST_EPRAVS_PPS 6
+#define MODE_LIST_SPRAVS_PPS 7
+#define MODE_LIST_AVS 8
 
 // display mode
 #define DISP_VOLTAGE 0
@@ -299,26 +316,38 @@ bool selectCalMode() {
 void selectStartMode() {
   CVCC_OFF();
   if (selectCalMode()) {
-    mode = MODE_CAL;
+    mode = MODE_LIST_CAL;
   } else if (readTrigger()) {
-    mode = MODE_TRG;
+    mode = MODE_LIST_TRG;
   } else {
-    mode = MODE_SETTRG;
+    mode = MODE_LIST_SETTRG;
   }
 }
 #else
 void selectStartMode() {
   CVCC_OFF();
   if (selectCalMode()) {
-    mode = MODE_CAL;
+    mode = MODE_LIST_CAL;
   } else if (readTrigger()) {
-    mode = MODE_TRG;
+    mode = MODE_LIST_TRG;
+  } else if (PD_getEPRAVSNum()) {
+    if (PD_getPPSNum()){
+      mode = MODE_LIST_EPRAVS_PPS;
+    } else {
+      mode = MODE_LIST_AVS;
+    }
+  } else if (PD_getSPRAVSNum()) {
+    if (PD_getPPSNum()){
+      mode = MODE_LIST_SPRAVS_PPS;
+    } else {
+      mode = MODE_LIST_AVS;
+    }
   } else if (PD_getPPSNum()) {
-    mode = MODE_PPS;
+    mode = MODE_LIST_PPS;
   } else if (PD_getFixedNum()) {
-    mode = MODE_FIX;
+    mode = MODE_LIST_FIX;
   } else {
-    mode = MODE_5V;
+    mode = MODE_LIST_5V;
   }
 }
 #endif
@@ -381,6 +410,7 @@ void manageOnOff() {
     } else if ((set_Current != PD_getCurrent()) && !output) { // change Current while setting
       invalid_pd = !PD_setPDOwithCurrent(pdonum, min_Voltage, set_Current);
     }
+
   } else if (mode == MODE_FIX) {
     if (!PIN_read(PIN_ONOFF) && output && !invalid_pd) { // OFF -> ON
       invalid_pd = !PD_setPDOwithCurrent(pdonum, set_Voltage, set_Current);
@@ -391,8 +421,26 @@ void manageOnOff() {
     } else if (PIN_read(PIN_ONOFF) && !output) { // ON -> OFF
       PIN_low(PIN_ONOFF);
       DLY_ms(10);
-      invalid_pd = !PD_setPDO(default_pdonum, FIX_DEFAULT_VOLTAGE);
+      invalid_pd = !PD_setPDOwithCurrent(default_pdonum, FIX_DEFAULT_VOLTAGE, set_Current);
     }
+
+  } else if (mode == MODE_AVS) {
+    if (!PIN_read(PIN_ONOFF) && !output && PD_getPDO() != pdonum) { // change high/low pdo at OFF
+      invalid_pd = !PD_setPDOwithCurrent(pdonum, PD_getPDOMinVoltage(pdonum), set_Current);
+    } else if (!PIN_read(PIN_ONOFF) && output && !invalid_pd) { // OFF -> ON
+      invalid_pd = !PD_setPDOwithCurrent(pdonum, set_Voltage, set_Current);
+      DLY_ms(100);
+      if (!invalid_pd) {
+        PIN_high(PIN_ONOFF);
+      }
+    } else if (PIN_read(PIN_ONOFF) && !output) { // ON -> OFF
+      PIN_low(PIN_ONOFF);
+      DLY_ms(10);
+      invalid_pd = !PD_setPDOwithCurrent(pdonum, PD_getPDOMinVoltage(pdonum), set_Current);
+    } else if (set_Voltage != PD_getVoltage() && output & PIN_read(PIN_ONOFF)) { // change voltage while output
+      invalid_pd = !PD_setPDOwithCurrent(pdonum, set_Voltage, set_Current);
+    }
+
   } else if (output && !invalid_pd) {
     PIN_high(PIN_ONOFF);
   } else {
@@ -457,6 +505,8 @@ void ppsmode_loop();
 void fiveVmode();
 void fixmode_setup();
 void fixmode_loop();
+void avsmode_setup();
+void avsmode_loop();
 void calmode();
 void triggermode_init();
 void triggermode_loop();
@@ -521,14 +571,17 @@ int main(void) {
 // ===================================================================================
 // mode select
 // ===================================================================================
-#define MODE_LIST_MAX 2
+#define MODE_LIST_MAX 3
 
-uint8_t mode_list[6][MODE_LIST_MAX + 1] = {{MODE_5V, MODE_SETTRG, UINT8_MAX}, // fiveVmode
-                                      {MODE_FIX, MODE_SETTRG, UINT8_MAX}, // fixmode
-                                      {MODE_PPS, MODE_FIX, MODE_SETTRG}, // ppsmode
-                                      {MODE_VER, MODE_CAL, UINT8_MAX}, // calmode
-                                      {MODE_TRG, MODE_DELTRG, UINT8_MAX}, // triggermode
-                                      {MODE_SETTRG, UINT8_MAX, UINT8_MAX}}; // settriger
+uint8_t mode_list[9][MODE_LIST_MAX + 1] = {{MODE_5V, MODE_SETTRG, UINT8_MAX, UINT8_MAX}, // MODE_LIST_5V
+                                      {MODE_FIX, MODE_SETTRG, UINT8_MAX, UINT8_MAX}, // MODE_LIST_FIX
+                                      {MODE_PPS, MODE_FIX, MODE_SETTRG, UINT8_MAX}, // MODE_LIST_PPS
+                                      {MODE_VER, MODE_CAL, UINT8_MAX, UINT8_MAX}, // MODE_LIST_CAL
+                                      {MODE_TRG, MODE_DELTRG, UINT8_MAX, UINT8_MAX}, // MODE_LIST_TRG
+                                      {MODE_SETTRG, UINT8_MAX, UINT8_MAX, UINT8_MAX}, // MODE_LIST_SETTRG
+                                      {MODE_AVS, MODE_PPS, MODE_FIX, MODE_SETTRG}, // MODE_LIST_EPRAVS_PPS
+                                      {MODE_PPS, MODE_AVS, MODE_FIX, MODE_SETTRG}, // MODE_LIST_SPRAVS_PPS
+                                      {MODE_AVS, MODE_FIX, MODE_SETTRG, UINT8_MAX}}; // MODE_LIST_AVS
 
 void mode_menu() {
   uint8_t menu_num = 0;
@@ -574,6 +627,9 @@ void mode_menu() {
       case MODE_VER:
         SEG_setEach(SEG_V, SEG_E, SEG_R, 0); // "VER"
         break;
+      case MODE_AVS:
+        SEG_setEach(SEG_A, SEG_V, SEG_S, 0); // "AVS"
+        break;
     }
 
     switch (BUTTON_read()) {
@@ -596,6 +652,7 @@ void mode_menu() {
       case BUTTON_OP_SHORT:
         switch (mode_list[mode][menu_num]) {
           case MODE_5V:
+            mode = MODE_5V;
             fiveVmode();
             break;
           case MODE_FIX:
@@ -605,11 +662,13 @@ void mode_menu() {
             menu_num = 0; // reset to default
             break;
           case MODE_PPS:
+            mode = MODE_PPS;
             ppsmode_setup();
             selectStartMode();
             menu_num = 0; // reset to default
             break;
           case MODE_CAL:
+            mode = MODE_CAL;
             calmode();
             selectStartMode();
             menu_num = 0; // reset to default
@@ -639,6 +698,12 @@ void mode_menu() {
             } else {
               vermode();
             }
+            break;
+          case MODE_AVS:
+            mode = MODE_AVS;
+            avsmode_setup();
+            selectStartMode();
+            menu_num = 0; // reset to default
             break;
           default:
             break;
@@ -828,13 +893,13 @@ void ppsmode_loop() {
         break;
       case BUTTON_DOWN_SHORT:
         if (dispmode == DISP_VOLTAGE) { // decrease voltage
-          set_Voltage -= STEP_VOLTAGE_SHORT;
-          if (set_Voltage < min_Voltage) set_Voltage = min_Voltage;
-          temp_set_Voltage = set_Voltage;
+          temp_set_Voltage -= STEP_VOLTAGE_SHORT;
+          if (temp_set_Voltage < min_Voltage) temp_set_Voltage = min_Voltage;
+          set_Voltage = temp_set_Voltage;
         } else if (dispmode == DISP_CURRENT) {  // decrease current
-          set_Current -= STEP_CURRENT_SHORT;
-          if (set_Current < min_Current) set_Current = min_Current;
-          temp_set_Current = set_Current;
+          temp_set_Current -= STEP_CURRENT_SHORT;
+          if (temp_set_Current < min_Current) temp_set_Current = min_Current;
+          set_Current = temp_set_Current;
         }
         break;
       case BUTTON_DOWN_LONG_HOLD:
@@ -868,13 +933,13 @@ void ppsmode_loop() {
         break;
       case BUTTON_UP_SHORT:
         if (dispmode == DISP_VOLTAGE) {
-          set_Voltage += STEP_VOLTAGE_SHORT;
-          if (set_Voltage > max_Voltage) set_Voltage = max_Voltage;
-          temp_set_Voltage = set_Voltage;
+          temp_set_Voltage += STEP_VOLTAGE_SHORT;
+          if (temp_set_Voltage > max_Voltage) temp_set_Voltage = max_Voltage;
+          set_Voltage = temp_set_Voltage;
         } else if (dispmode == DISP_CURRENT) {
-          set_Current += STEP_CURRENT_SHORT;
-          if (set_Current > max_Current) set_Current = max_Current;
-          temp_set_Current = set_Current;
+          temp_set_Current += STEP_CURRENT_SHORT;
+          if (temp_set_Current > max_Current) temp_set_Current = max_Current;
+          set_Current = temp_set_Current;
         }
         break;
       case BUTTON_UP_LONG_HOLD:
@@ -1013,7 +1078,7 @@ void fixmode_loop() {
       } else {
         set_Current = FIX_MAX_CURRENT;
       }
-      
+
       if (output) {
         invalid_pd = !PD_setPDOwithCurrent(pdonum, set_Voltage, set_Current);
       } else {
@@ -1104,6 +1169,221 @@ void fixmode_loop() {
     }
   }
 }
+
+// ===================================================================================
+// AVS mode
+#warning "adapt for 0V pdo"
+// ===================================================================================
+uint8_t lowpdo = 0; // 9~15
+uint8_t highpdo = 0; // 15~
+
+// set avs pdonum, set_Voltage, set_Current
+void set_avs(uint16_t avs_Voltage) {
+  set_Voltage = avs_Voltage;
+  if (avs_Voltage <= EPRAVS_MIN_VOLTAGE && lowpdo) { // lowpdo priority
+    pdonum = lowpdo;
+    set_Current = max_Current;
+  } else { // highpdo
+    pdonum = highpdo;
+    set_Current = PD_getPDOMaxCurrentWithVoltage(pdonum, avs_Voltage);
+    if (set_Current > AVS_MAX_CURRENT) {
+      set_Current = AVS_MAX_CURRENT;
+    }
+  }
+}
+
+void avsmode_setup() {
+  pdonum = 0;
+  lowpdo = 0;
+  highpdo = 0;
+  max_Voltage = 0;
+  min_Voltage = 0;
+  max_Current = 0; // SPR max current
+  set_Voltage = 0;
+  set_Current = 0;
+  for (uint8_t i = 1; i <= PD_getPDONum(); i++) {
+    if (PD_getPDOType(i) == PDO_TYPE_SPR_AVS) {
+      if (max_Current < PD_getPDOMaxCurrentWithVoltage(i, SPRAVS_MIN_VOLTAGE)) { // select high current for low
+        lowpdo = i;
+        max_Current = PD_getPDOMaxCurrentWithVoltage(i, SPRAVS_MIN_VOLTAGE);
+      }
+      if (PD_getPDOMaxVoltage(i) > EPRAVS_MIN_VOLTAGE && (!highpdo || PD_getPDOMaxVoltage(highpdo) < PD_getPDOMaxVoltage(i))) { // select spr avs as high
+        highpdo = i;
+      }
+    } else if (PD_getPDOType(i) == PDO_TYPE_EPR_AVS) {
+      if (!highpdo || PD_getPDOMaxVoltage(highpdo) < PD_getPDOMaxVoltage(i)) { // select more high voltage
+        highpdo = i;
+      }
+    }
+  }
+  
+  if (max_Current > AVS_MAX_CURRENT) {
+    max_Current = AVS_MAX_CURRENT;
+  }
+
+  if (lowpdo && highpdo) {
+    min_Voltage = PD_getPDOMinVoltage(lowpdo);
+    max_Voltage = PD_getPDOMaxVoltage(highpdo);
+  } else if (lowpdo && !highpdo) { // only 9~15V
+    min_Voltage = PD_getPDOMinVoltage(lowpdo);
+    max_Voltage = PD_getPDOMaxVoltage(lowpdo);
+  } else if (!lowpdo && highpdo) { // only 15V~
+    min_Voltage = PD_getPDOMinVoltage(highpdo);
+    max_Voltage = PD_getPDOMaxVoltage(highpdo);
+  }
+
+  // disp maxVoltage
+  CVCC_CV();
+  SEG_setNumber(max_Voltage,true);
+  do {
+    count = BUTTON_read();
+    DLY_ms(1);
+    SEG_driver();
+    if (PD_Loop()) {
+      return; // return to mode_menu
+    }
+  } while (!BUTTON_IS_SHORT(count));
+
+  // disp minVoltage
+  SEG_setNumber(min_Voltage,true);
+  do {
+    count = BUTTON_read();
+    DLY_ms(1);
+    SEG_driver();
+    if (PD_Loop()) {
+      return; // return to mode_menu
+    }
+  } while (!BUTTON_IS_SHORT(count));
+
+  // init
+  count = 0;
+  dispmode = DISP_VOLTAGE;
+  output = false;
+  set_avs(min_Voltage);
+  invalid_pd = !PD_setPDOwithCurrent(pdonum, set_Voltage, set_Current);
+  avsmode_loop();
+}
+
+
+void avsmode_loop() {
+  uint16_t temp_set_Voltage = set_Voltage; // use in long pressing. avoid detect invalid voltage in mesureVA
+  bool countflag = false;
+
+  while (1) {
+    manageOnOff();
+    manageDisp(temp_set_Voltage, set_Current);
+    mesureVA();
+    count++;
+
+    // Refresh disp
+    if (count >= MAXCOUNT) {
+      count = 0;
+      countflag = true;
+      
+      Voltage = (uint32_t)(sum_Voltage / MAXCOUNT);
+      Current = (uint32_t)(sum_Current / MAXCOUNT);
+      sum_Voltage = 0;
+      sum_Current = 0;
+    }
+    if (PD_Loop()) { // change PDO
+      pdonum = 0;
+      for (uint8_t i = 1; i <= PD_getPDONum(); i++) {
+        #warning "change PDO"
+      }
+      if (!pdonum) {
+        PIN_low(PIN_ONOFF);
+        output = false;
+        PD_setVoltage(5000);
+        return; // return to mode_menu
+      } else {
+        invalid_pd = !PD_setPDO(pdonum, set_Voltage);
+      }
+    }
+
+    // button
+    switch (BUTTON_read()) {
+      case BUTTON_NON: // not pushed
+        countflag = false;
+        break;
+      case BUTTON_ANY: // under processing
+        break;
+      case BUTTON_DOWN_SHORT:
+        if (dispmode == DISP_VOLTAGE) { // decrease voltage
+          temp_set_Voltage -= STEP_VOLTAGE_SHORT;
+          if (temp_set_Voltage < min_Voltage) temp_set_Voltage = min_Voltage;
+          set_avs(temp_set_Voltage);
+        }
+        break;
+      case BUTTON_DOWN_LONG_HOLD:
+        if (dispmode == DISP_VOLTAGE && countflag) {
+          if ((set_Voltage - temp_set_Voltage) >= STEP_VOLTAGE_LONG_NEG) {
+            set_avs(temp_set_Voltage);
+          }
+          temp_set_Voltage -= STEP_VOLTAGE_LONG;
+          if (temp_set_Voltage < min_Voltage) {
+            temp_set_Voltage = min_Voltage;
+            set_avs(temp_set_Voltage);
+          }
+          countflag = false;
+        }
+        break;
+      case BUTTON_DOWN_LONG_RELEASE:
+        if (dispmode == DISP_VOLTAGE) {
+          set_avs(temp_set_Voltage);
+        }
+        break;
+      case BUTTON_UP_SHORT:
+        if (dispmode == DISP_VOLTAGE) {
+          temp_set_Voltage += STEP_VOLTAGE_SHORT;
+          if (temp_set_Voltage > max_Voltage) temp_set_Voltage = max_Voltage;
+          set_avs(temp_set_Voltage);
+        }
+        break;
+      case BUTTON_UP_LONG_HOLD:
+        if (dispmode == DISP_VOLTAGE && countflag) {
+          if ((temp_set_Voltage - set_Voltage) >= STEP_VOLTAGE_LONG_NEG) {
+            set_avs(temp_set_Voltage);
+          }
+          temp_set_Voltage += STEP_VOLTAGE_LONG;
+          if (temp_set_Voltage > max_Voltage) {
+            temp_set_Voltage = max_Voltage;
+            set_avs(temp_set_Voltage);
+          }
+          countflag = false;
+        }
+        break;
+      case BUTTON_UP_LONG_RELEASE:
+        if (dispmode == DISP_VOLTAGE) {
+          set_avs(temp_set_Voltage);
+        }
+        break;
+      case BUTTON_CVCC_SHORT:
+        switch (dispmode) {
+          case DISP_WATT:
+            dispmode = DISP_VOLTAGE;
+            break;
+          case DISP_VOLTAGE:
+            dispmode = DISP_CURRENT;
+            break;
+          case DISP_CURRENT:
+            dispmode = DISP_VOLTAGE;
+            break;
+        }
+        break;
+      case BUTTON_CVCC_LONG_HOLD:
+        if (output && dispmode < DISP_WATT) dispmode = DISP_WATT;
+        break;
+      case BUTTON_OP_SHORT:
+        if (!invalid_pd) {
+          output =! output;
+        }
+        break;
+      default:
+        break;
+    }
+  }
+}
+
 
 // ===================================================================================
 // 5V mode
@@ -1289,6 +1569,7 @@ void calmode() {
 // ===================================================================================
 // trigger mode
 // ===================================================================================
+#warning "AVS"
 void triggermode_pdosearch() {
   pdonum = 0; // No pdonum selected
   // select pdo
