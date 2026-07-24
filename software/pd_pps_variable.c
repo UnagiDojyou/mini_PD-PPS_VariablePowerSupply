@@ -77,7 +77,11 @@
 #define EPRAVS_MIN_VOLTAGE 15000 // 15V
 #define AVS_MAX_CURRENT (MAX_IOUT_CONTI - LIMIT_CURRENT)
 
-#define TRIGGER_MAX_VOLTAGE 21000 // 21V
+#if (MAX_VIN - LIMIT_VOLTAGE) < 28000
+#define TRIGGER_MAX_VOLTAGE (MAX_VIN - LIMIT_VOLTAGE)
+#else
+#define TRIGGER_MAX_VOLTAGE 28000 // 28V
+#endif
 #if MIN_VIN > 3300
 #define TRIGGER_MIN_VOLTAGE 5000 // 5.0V
 #else
@@ -421,7 +425,7 @@ void manageOnOff() {
     } else if (PIN_read(PIN_ONOFF) && !output) { // ON -> OFF
       PIN_low(PIN_ONOFF);
       DLY_ms(10);
-      invalid_pd = !PD_setPDOwithCurrent(default_pdonum, FIX_DEFAULT_VOLTAGE, set_Current);
+      invalid_pd = !PD_setPDOwithCurrent(default_pdonum, FIX_DEFAULT_VOLTAGE, PD_getPDOMaxCurrent(default_pdonum));
     }
 
   } else if (mode == MODE_AVS) {
@@ -1048,12 +1052,11 @@ void fixmode_loop() {
 
     if (PD_Loop()) { // pdo change
       pdonum = 0;
+      default_pdonum = 1;
       for (uint8_t i = 1; i <= PD_getPDONum(); i++) {
         if (PD_getPDOType(i) == PDO_TYPE_FIXED && PD_getPDOMaxVoltage(i) == set_Voltage) {
           pdonum = i;
         }
-      }
-      for (uint8_t i = 1; i <= PD_getPDONum(); i++) {
         if (PD_getPDOType(i) == PDO_TYPE_FIXED && PD_getPDOMaxVoltage(i) == FIX_DEFAULT_VOLTAGE) {
           default_pdonum = i;
           if (pdonum == 0) {
@@ -1073,16 +1076,16 @@ void fixmode_loop() {
       }
 
       set_Voltage = PD_getPDOMaxVoltage(pdonum);
-      if (PD_getPDOMaxCurrent(pdonum) <= FIX_MAX_CURRENT){
-        set_Current = PD_getPDOMaxCurrent(pdonum);
-      } else {
+      if (PD_getPDOMaxCurrent(pdonum) > FIX_MAX_CURRENT){
         set_Current = FIX_MAX_CURRENT;
+      } else {
+        set_Current = PD_getPDOMaxCurrent(pdonum);
       }
 
       if (output) {
         invalid_pd = !PD_setPDOwithCurrent(pdonum, set_Voltage, set_Current);
       } else {
-        invalid_pd = !PD_setPDO(default_pdonum, set_Voltage);
+        invalid_pd = !PD_setPDO(default_pdonum, PD_getPDOMaxVoltage(default_pdonum));
       }
     }
 
@@ -1172,7 +1175,6 @@ void fixmode_loop() {
 
 // ===================================================================================
 // AVS mode
-#warning "adapt for 0V pdo"
 // ===================================================================================
 uint8_t lowpdo = 0; // 9~15
 uint8_t highpdo = 0; // 15~
@@ -1192,15 +1194,7 @@ void set_avs(uint16_t avs_Voltage) {
   }
 }
 
-void avsmode_setup() {
-  pdonum = 0;
-  lowpdo = 0;
-  highpdo = 0;
-  max_Voltage = 0;
-  min_Voltage = 0;
-  max_Current = 0; // SPR max current
-  set_Voltage = 0;
-  set_Current = 0;
+void avs_pdosearch() {
   for (uint8_t i = 1; i <= PD_getPDONum(); i++) {
     if (PD_getPDOType(i) == PDO_TYPE_SPR_AVS) {
       if (max_Current < PD_getPDOMaxCurrentWithVoltage(i, SPRAVS_MIN_VOLTAGE)) { // select high current for low
@@ -1231,6 +1225,19 @@ void avsmode_setup() {
     min_Voltage = PD_getPDOMinVoltage(highpdo);
     max_Voltage = PD_getPDOMaxVoltage(highpdo);
   }
+}
+
+void avsmode_setup() {
+  pdonum = 0;
+  lowpdo = 0;
+  highpdo = 0;
+  max_Voltage = 0;
+  min_Voltage = 0;
+  max_Current = 0; // SPR max current
+  set_Voltage = 0;
+  set_Current = 0;
+
+  avs_pdosearch();
 
   // disp maxVoltage
   CVCC_CV();
@@ -1287,16 +1294,28 @@ void avsmode_loop() {
     }
     if (PD_Loop()) { // change PDO
       pdonum = 0;
-      for (uint8_t i = 1; i <= PD_getPDONum(); i++) {
-        #warning "change PDO"
-      }
+      highpdo = 0;
+      lowpdo = 0;
+      avs_pdosearch();
+      set_avs(set_Voltage);
+      
       if (!pdonum) {
         PIN_low(PIN_ONOFF);
         output = false;
         PD_setVoltage(5000);
         return; // return to mode_menu
       } else {
-        invalid_pd = !PD_setPDO(pdonum, set_Voltage);
+        if (PD_getPDOMaxCurrentWithVoltage(pdonum, set_Voltage) > Current) {
+          // countiue output
+        } else {
+          output = false;
+          PIN_low(PIN_ONOFF);
+        }
+        if (output) {
+          invalid_pd = !PD_setPDOwithCurrent(pdonum, set_Voltage, set_Current);
+        } else {
+          invalid_pd = !PD_setPDOwithCurrent(pdonum, PD_getPDOMinVoltage(pdonum), set_Current);
+        }
       }
     }
 
@@ -1569,17 +1588,25 @@ void calmode() {
 // ===================================================================================
 // trigger mode
 // ===================================================================================
-#warning "AVS"
 void triggermode_pdosearch() {
   pdonum = 0; // No pdonum selected
+  default_pdonum = 1;
+  mode = MODE_TRG;
   // select pdo
   for (uint8_t i = 1; i <= PD_getPDONum(); i++) {
     if (PD_getPDOType(i) == PDO_TYPE_FIXED) { // fix
       if (PD_getPDOMaxVoltage(i) == trigger_voltage && trigger_current == UINT16_MAX) {
         set_Voltage = trigger_voltage;
-        set_Current = PD_getPDOMaxCurrent(i);
+        if (PD_getPDOMaxCurrent(i) > FIX_MAX_CURRENT) {
+          set_Current = FIX_MAX_CURRENT;
+        } else {
+          set_Current = PD_getPDOMaxCurrent(i);
+        }
         pdonum = i;
         mode = MODE_FIX;
+      }
+      if (PD_getPDOMaxVoltage(i) == FIX_DEFAULT_VOLTAGE) {
+        default_pdonum = i;
       }
     } else if (PD_getPDOType(i) == PDO_TYPE_PPS) { // PPS 
       if (PD_getPDOMinVoltage(i) <= trigger_voltage && trigger_voltage <= PD_getPDOMaxVoltage(i) &&
@@ -1588,7 +1615,11 @@ void triggermode_pdosearch() {
           set_Voltage = trigger_voltage;
           min_Voltage = PD_getPDOMinVoltage(i);
           if (trigger_current == UINT16_MAX) {
-            set_Current = PD_getPDOMaxCurrent(i);
+            if (PD_getPDOMaxCurrent(i) > PPS_MAX_CURRENT) {
+              set_Current = PPS_MAX_CURRENT;
+            } else {
+              set_Current = PD_getPDOMaxCurrent(i);
+            }
           } else {
             set_Current = trigger_current;
           }
@@ -1596,10 +1627,17 @@ void triggermode_pdosearch() {
           mode = MODE_PPS;
         }
       }
-    } else if (PD_getPDOType(i) == PDO_TYPE_SPR_AVS) { // SPR AVS
-      // To Do
-    } else if (PD_getPDOType(i) == PDO_TYPE_EPR_AVS) { // EPR AVS
-      // To Do
+    } else if (PD_getPDOType(i) == PDO_TYPE_SPR_AVS || PD_getPDOType(i) == PDO_TYPE_EPR_AVS) { // SPR AVS
+      if (PD_getPDOMinVoltage(i) <= trigger_voltage && trigger_voltage <= PD_getPDOMaxVoltage(i) && trigger_current == UINT16_MAX) {
+        set_Voltage = trigger_voltage;
+        if (PD_getPDOMaxCurrentWithVoltage(i, trigger_voltage) > AVS_MAX_CURRENT) {
+          set_Current = AVS_MAX_CURRENT;
+        } else {
+          set_Current = PD_getPDOMaxCurrentWithVoltage(i, trigger_voltage);
+        }
+        pdonum = i;
+        mode = MODE_AVS;
+      }
     }
   }
 }
@@ -1613,16 +1651,20 @@ void triggermode_waitpdo() {
   PD_setVoltage(5000);
   while(!pdonum) {
     SEG_driver();
+    DLY_ms(1);
     if (PD_Loop()) {
       triggermode_pdosearch();
-      DLY_ms(1);
+      if (!pdonum) {
+        PD_setPDO(default_pdonum, PD_getPDOMaxVoltage(default_pdonum));
+      }
     }
   }
   PD_setMismatch(0);
   if (mode == MODE_PPS) {
-    if (!PD_setPDO(min_Voltage, set_Current)) triggermode_waitpdo();
-  } else if (mode == MODE_FIX) {
-    if (!PD_setPDO(pdonum, set_Voltage)) triggermode_waitpdo();
+    if (!PD_setPDOwithCurrent(pdonum, min_Voltage, set_Current)) triggermode_waitpdo();
+    DLY_ms(100);
+  } else if (mode == MODE_FIX || mode == MODE_AVS) {
+    if (!PD_setPDOwithCurrent(pdonum, set_Voltage, set_Current)) triggermode_waitpdo();
   }
   output = true;
 }
@@ -1641,10 +1683,15 @@ void triggermode_setup() { // called when, init or Pdo changed
     case MODE_5V:
       break;
     case MODE_FIX:
-      if (!PD_setPDO(pdonum, set_Voltage)) triggermode_waitpdo();
+    case MODE_AVS:
+      if (!PD_setPDOwithCurrent(pdonum, set_Voltage, set_Current)) triggermode_waitpdo();
       break;
     case MODE_PPS:
-      if (!PD_setPDOwithCurrent(pdonum, min_Voltage, set_Current)) triggermode_waitpdo();
+      if (output) { // when change pdo
+        if (!PD_setPDOwithCurrent(pdonum, set_Voltage, set_Current)) triggermode_waitpdo();
+      } else { // init
+        if (!PD_setPDOwithCurrent(pdonum, min_Voltage, set_Current)) triggermode_waitpdo();
+      }
       break;
     case MODE_CAL:
       break;
@@ -1664,6 +1711,7 @@ void triggermode_init() { // first time
   // init
   dispmode = DISP_VOLTAGE;
   count = 0;
+  output = false;
   triggermode_setup();
 }
 
