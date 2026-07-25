@@ -225,11 +225,11 @@ uint8_t BUTTON_read() {
         BUTTON_pushing = BUTTON_CVCC_SHORT;
         break;
       case PIN_SEG_A3:
-        BUTTON_pushing = BUTTON_UP_SHORT;
+        BUTTON_pushing = BUTTON_DOWN_SHORT;
     }
     BUTTON_count++;
   } else if (PIN_read(PIN_BOOT_BUTTON)) {
-    BUTTON_pushing = BUTTON_DOWN_SHORT;
+    BUTTON_pushing = BUTTON_UP_SHORT;
     BUTTON_count++;
   } else if (BUTTON_pushing) {
     if (BUTTON_pushing == BUTTON_OP_SHORT && SEG_driving == PIN_SEG_A1) {
@@ -238,12 +238,12 @@ uint8_t BUTTON_read() {
     } else if (BUTTON_pushing == BUTTON_CVCC_SHORT && SEG_driving == PIN_SEG_A2) {
       BUTTON_pushing = 0;
       BUTTON_pushed = BUTTON_CVCC_SHORT;
-    } else if (BUTTON_pushing == BUTTON_UP_SHORT && SEG_driving == PIN_SEG_A3) {
-      BUTTON_pushing = 0;
-      BUTTON_pushed = BUTTON_UP_SHORT;
-    } else if (BUTTON_pushing == BUTTON_DOWN_SHORT && !PIN_read(PIN_BOOT_BUTTON)) {
+    } else if (BUTTON_pushing == BUTTON_DOWN_SHORT && SEG_driving == PIN_SEG_A3) {
       BUTTON_pushing = 0;
       BUTTON_pushed = BUTTON_DOWN_SHORT;
+    } else if (BUTTON_pushing == BUTTON_UP_SHORT && !PIN_read(PIN_BOOT_BUTTON)) {
+      BUTTON_pushing = 0;
+      BUTTON_pushed = BUTTON_UP_SHORT;
     } else {
       BUTTON_count++;
     }

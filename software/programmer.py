@@ -274,7 +274,7 @@ class Programmer:
             if (self.configdata[0] == 0xa5) and (self.configdata[2] == 0b00011111):
                 self.wpremove = False
         if self.chipname == 'CH32X035G8U6':
-            print('mini PD-PPS VariablePowerSupply V3')
+            print('mini PD-PPS VariablePowerSupply V3 or V4')
             if (self.configdata[0] == 0xa5):
                 self.wpremove = False
 

@@ -25,7 +25,7 @@ extern "C" {
 #define BUTTON_LONG_HOLD(button_short_num) (button_short_num * 10)
 #define BUTTON_LONG_RELEASE(button_short_num) (button_short_num * 10 + button_short_num)
 #define BUTTON_IS_LONG_RELEASE(button_num) (button_num == BUTTON_DOWN_LONG_RELEASE || button_num == BUTTON_UP_LONG_RELEASE || button_num == BUTTON_CVCC_LONG_RELEASE || button_num == BUTTON_OP_LONG_RELEASE)
-#define BUTTON_IS_SHORT(button_num) (BUTTON_DOWN_SHORT <= button_num && button_num <= BUTTON_OP_SHORT)
+#define BUTTON_IS_SHORT(button_num) (button_num == BUTTON_DOWN_SHORT || button_num == BUTTON_UP_SHORT || button_num == BUTTON_CVCC_SHORT || button_num == BUTTON_OP_SHORT)
 
 #define BUTTON_LONGCOUNT 250 // time of recognized as a long press
 #define BUTTON_SHORTCOUNT 2 // time of recognized as a short press
