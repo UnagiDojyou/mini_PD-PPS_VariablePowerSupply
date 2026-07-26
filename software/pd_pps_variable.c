@@ -105,6 +105,9 @@
 #define STEP_VOLTAGE_LONG_NEG 500 // Send pps when this value changes while holding down the button
 #define STEP_CURRENT_LONG_NEG 200 // Send pps when this value changes while holding down the button
 
+// testmode
+#define TEST_COUNTUP 200 // 0.2ms
+
 // time out of triger menu
 #define TRIGGER_TIMEOUT 2000 // 2second
 
@@ -125,6 +128,7 @@
 #define MODE_DELTRG 6
 #define MODE_VER 7
 #define MODE_AVS 8
+#define MODE_TEST 9
 
 // mode list
 #define MODE_LIST_5V 0
@@ -519,6 +523,7 @@ void triggersetmode_loop();
 void triggerdelmode();
 void vermode();
 void mode_menu();
+void testmode();
 
 // ===================================================================================
 // Main Function
@@ -580,7 +585,7 @@ int main(void) {
 uint8_t mode_list[9][MODE_LIST_MAX + 1] = {{MODE_5V, MODE_SETTRG, UINT8_MAX, UINT8_MAX}, // MODE_LIST_5V
                                       {MODE_FIX, MODE_SETTRG, UINT8_MAX, UINT8_MAX}, // MODE_LIST_FIX
                                       {MODE_PPS, MODE_FIX, MODE_SETTRG, UINT8_MAX}, // MODE_LIST_PPS
-                                      {MODE_VER, MODE_CAL, UINT8_MAX, UINT8_MAX}, // MODE_LIST_CAL
+                                      {MODE_VER, MODE_CAL, MODE_TEST, UINT8_MAX}, // MODE_LIST_CAL
                                       {MODE_TRG, MODE_DELTRG, UINT8_MAX, UINT8_MAX}, // MODE_LIST_TRG
                                       {MODE_SETTRG, UINT8_MAX, UINT8_MAX, UINT8_MAX}, // MODE_LIST_SETTRG
                                       {MODE_AVS, MODE_PPS, MODE_FIX, MODE_SETTRG}, // MODE_LIST_EPRAVS_PPS
@@ -633,6 +638,9 @@ void mode_menu() {
         break;
       case MODE_AVS:
         SEG_setEach(SEG_A, SEG_V, SEG_S, 0); // "AVS"
+        break;
+      case MODE_TEST:
+        SEG_setEach(SEG_T, SEG_S, SEG_T, 0); // "TST"
         break;
     }
 
@@ -706,6 +714,12 @@ void mode_menu() {
           case MODE_AVS:
             mode = MODE_AVS;
             avsmode_setup();
+            selectStartMode();
+            menu_num = 0; // reset to default
+            break;
+          case MODE_TEST:
+            mode = MODE_TEST;
+            testmode();
             selectStartMode();
             menu_num = 0; // reset to default
             break;
@@ -1464,11 +1478,139 @@ void fiveVmode() {
   }
 }
 
+
+// ===================================================================================
+// test mode
+// ===================================================================================
+void testmode() {
+  count = 0;
+  bool countflag = false;
+  bool cv = false;
+  output = false;
+  bool button_test = true;
+  uint8_t select_digit = 1; // 1:Left, 2:Centor, 3:Right
+  uint8_t counts[4] = {0, 0, 0, 0}; // non, Left, Centor, Right
+  
+  while(button_test) {
+    DLY_ms(1);
+    SEG_setEach(counts[1], counts[2], counts[3], select_digit);
+    SEG_driver();
+    count++;
+    if (count > MAXCOUNT) {
+      count = 0;
+      countflag = true;
+    }
+    // button
+    switch (BUTTON_read()) {
+      case BUTTON_NON:
+        countflag = false;
+        break;
+      case BUTTON_ANY:
+        break;
+      case BUTTON_DOWN_SHORT:
+        if (counts[select_digit] > 0) counts[select_digit]--;
+        break;
+      case BUTTON_DOWN_LONG_HOLD:
+        if (countflag) {
+          if (counts[select_digit] > 0) counts[select_digit]--;
+        }
+        countflag = false;
+        break;
+      case BUTTON_UP_SHORT:
+        if (counts[select_digit] < 9) counts[select_digit]++;
+        break;
+      case BUTTON_UP_LONG_HOLD:
+        if (countflag) {
+          if (counts[select_digit] < 9) counts[select_digit]++;
+        }
+        countflag = false;
+        break;
+      case BUTTON_CVCC_SHORT: // Right
+        if (select_digit < 3) select_digit++;
+        break;
+      case BUTTON_CVCC_LONG_HOLD:
+        if (countflag) {
+          if (cv) {
+            CVCC_CC();
+          } else {
+            CVCC_CV();
+          }
+          cv =! cv;
+        }
+        countflag = false;
+        break;
+      case BUTTON_CVCC_LONG_RELEASE:
+        CVCC_OFF();
+        break;
+      case BUTTON_OP_SHORT: // Left
+        if (select_digit > 1) select_digit--;
+        break;
+      case BUTTON_OP_LONG_HOLD:
+        if (!output) {
+          PIN_toggle(PIN_ONOFF);
+          output = true;
+        }
+        break;
+      case BUTTON_OP_LONG_RELEASE:
+        output = false;
+        if (!PIN_read(PIN_ONOFF)) {
+          button_test = false; // exit while loop
+        }
+        break;
+      default:
+        break;
+    }
+  }
+
+#ifndef DISABLE_CURRENT
+  // calivration 0.00A
+  CVCC_OFF();
+  PIN_low(PIN_ONOFF);
+  sum_Current = 0;
+  for (uint8_t i = 0; i < MAXCOUNT; i++) { // automatically done
+    ADC_input(PIN_I_ADC);
+    DLY_ms(1);
+    sum_Current += ADC_read();
+  }
+
+  coeffi_a = (1000 * DEBUG_VDD) / ((DEBUG_SHUNT_R * 4095) / 1000);
+  coeffi_b = 1000 * CALA1 - ((coeffi_a * (sum_Current) / MAXCOUNT) / 100);
+#else
+  coeffi_a = 0;
+  coeffi_b = 0;
+#endif
+  coeffv_a = (DEBUG_VDD * (DEBUG_HIGH_R + DEBUG_LOW_R) / DEBUG_LOW_R) * 1000 / 4095;
+  coeffv_b = 0;
+
+  // disp result
+  SEG_setNumber((uint32_t)coeffi_b, false);
+  CVCC_CC();
+  do {
+    count = BUTTON_read();
+    DLY_ms(1);
+    SEG_driver();
+  } while (!BUTTON_IS_SHORT(count));
+  PIN_low(PIN_ONOFF);
+
+  if (writeCoeff()) {
+    DLY_ms(10);
+    if (readCoeff()) {
+      // sucess
+      return; // return to mode_menu
+    }
+  }
+  SEG_setEach(SEG_NON, SEG_E, SEG_NON, 0); // " E "
+  while (1) {
+    SEG_driver();
+    DLY_ms(1);
+  }
+}
+
 // ===================================================================================
 // calibration mode
 // ===================================================================================
 void calmode() {
-  uint16_t count = 0;
+  count = 0;
   uint32_t sum = 0;
   uint32_t aveV1 = 0;
   uint32_t aveV2 = 0;
