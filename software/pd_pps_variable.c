@@ -75,6 +75,7 @@
 #define SPRAVS_MIN_VOLTAGE 9000 // 9V
 #define SPRAVS_MAX_VOLTAGE 20000 // 20V
 #define EPRAVS_MIN_VOLTAGE 15000 // 15V
+#define EPRAVS_MAX_VOLTAGE (MAX_VIN - LIMIT_VOLTAGE) // 15V
 #define AVS_MAX_CURRENT (MAX_IOUT_CONTI - LIMIT_CURRENT)
 
 #if (MAX_VIN - LIMIT_VOLTAGE) < 28000
@@ -1238,6 +1239,13 @@ void avs_pdosearch() {
   } else if (!lowpdo && highpdo) { // only 15V~
     min_Voltage = PD_getPDOMinVoltage(highpdo);
     max_Voltage = PD_getPDOMaxVoltage(highpdo);
+  }
+
+  if (EPRAVS_MAX_VOLTAGE < max_Voltage) {
+    if (min_Voltage > EPRAVS_MAX_VOLTAGE) { // cannot output any AVS
+      while(1);
+    }
+    max_Voltage = EPRAVS_MAX_VOLTAGE;
   }
 }
 
