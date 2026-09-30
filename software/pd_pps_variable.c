@@ -1563,7 +1563,7 @@ void testmode() {
   }
 
 #ifndef DISABLE_CURRENT
-  // calivration 0.00A
+  // calibration 0.00A
   CVCC_OFF();
   PIN_low(PIN_ONOFF);
   sum_Current = 0;
@@ -1574,7 +1574,7 @@ void testmode() {
   }
 
   coeffi_a = (1000 * DEBUG_VDD) / ((DEBUG_SHUNT_R * 4095) / 1000);
-  coeffi_b = 1000 * CALA1 - ((coeffi_a * (sum_Current) / MAXCOUNT) / 100);
+  coeffi_b = 1000 * CALA1 - (coeffi_a * (sum_Current) / MAXCOUNT);
 #else
   coeffi_a = 0;
   coeffi_b = 0;
@@ -1592,6 +1592,7 @@ void testmode() {
   } while (!BUTTON_IS_SHORT(count));
   PIN_low(PIN_ONOFF);
 
+  // write
   if (writeCoeff()) {
     DLY_ms(10);
     if (readCoeff()) {
@@ -1619,7 +1620,7 @@ void calmode() {
   uint32_t aveA2 = 0;
 #endif
 
-  // calivration 5.00V
+  // calibration 5.00V
   SEG_setNumber(CALV1, false);
   CVCC_CV();
   PIN_high(PIN_ONOFF);
@@ -1636,7 +1637,7 @@ void calmode() {
   }
   aveV1 = (100 * sum) / MAXCOUNT;
 
-  // calivration 18.00V
+  // calibration 18.00V
   SEG_setNumber(CALV2, false);
   do {
     count = BUTTON_read();
@@ -1652,7 +1653,7 @@ void calmode() {
   aveV2 = (100 * sum) / MAXCOUNT;
 
 #ifndef DISABLE_CURRENT
-  // calivration 0.00A
+  // calibration 0.00A
   SEG_setNumber(CALA1, false);
   CVCC_CC();
   PIN_low(PIN_ONOFF);
@@ -1669,7 +1670,7 @@ void calmode() {
   }
   aveA1 = (100 * sum) / MAXCOUNT;
 
-  // calivration 2.00A/3.00A
+  // calibration 2.00A/3.00A
   SEG_setNumber(CALA2, false);
   CVCC_CC();
   PIN_high(PIN_ONOFF);
