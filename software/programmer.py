@@ -11,10 +11,11 @@
 # -----------------------
 # You need to install PyUSB. Install it via "python3 -m pip install pyusb".
 #
-# On Windows you will need to install CH327 or Zadig driver.
+# On Windows you will need to install CH372 or Zadig driver.
 #
 # Connect while pressing the Down button.
 # Run "sudo python3 programmer.py pd_pps_variable.bin".
+# Run "sudo python3 programmer.py --erase" to erase all code flash.
 #
 
 try:
@@ -35,18 +36,21 @@ import os
 
 def _main():
     if len(sys.argv) != 2:
-        sys.stderr.write('ERROR: No bin file selected!\n')
-        sys.stderr.write('Example: sudo python3 programmer.py pd_pps_variable.bin\n')
+        sys.stderr.write('Usage: sudo python3 programmer.py <bin file | --erase>\n')
         sys.exit(1)
 
     try:
         isp = Programmer()
         isp.detect()
-        print('Flashing %s ...' % (sys.argv[1]))
-        with open(sys.argv[1], 'rb') as f: data = f.read()
-        isp.flash(data)
-        print('Verifying %d bytes ...' % len(data))
-        isp.verify(data)
+        if sys.argv[1] == '--erase':
+            print('Erasing all code flash ...')
+            isp.erase(isp.code_flash_size)
+        else:
+            print('Flashing %s ...' % (sys.argv[1]))
+            with open(sys.argv[1], 'rb') as f: data = f.read()
+            isp.flash(data)
+            print('Verifying %d bytes ...' % len(data))
+            isp.verify(data)
         isp.exit()
     except Exception as ex:
         sys.stderr.write('ERROR: %s\n' % str(ex))
