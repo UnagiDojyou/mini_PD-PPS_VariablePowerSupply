@@ -219,6 +219,14 @@ uint8_t inrush_count = 0;
 uint32_t trigger_voltage = 0;
 uint32_t trigger_current = 0;
 
+void keepPD() {
+  if (PD_getPDONum()) {
+    if (PD_Loop()) {
+      PD_setVoltage(5000);
+    }
+  }
+}
+
 // Read the coefficients for voltage/current value
 bool readCoeff() {
   coeffv_a = FLASH_read4Byte(FLASH_ADD_V_A);
@@ -423,7 +431,11 @@ void manageOnOff() {
   } else if (mode == MODE_FIX) {
     if (!PIN_read(PIN_ONOFF) && output && !invalid_pd) { // OFF -> ON
       invalid_pd = !PD_setPDOwithCurrent(pdonum, set_Voltage, set_Current);
-      DLY_ms(100);
+      for (uint8_t i = 0; i < 100; i++) { // instead of DLY_ms(100)
+        DLY_ms(1);
+        keepPD();
+        SEG_driver();
+      }
       if (!invalid_pd) {
         PIN_high(PIN_ONOFF);
       }
@@ -438,7 +450,11 @@ void manageOnOff() {
       invalid_pd = !PD_setPDOwithCurrent(pdonum, PD_getPDOMinVoltage(pdonum), set_Current);
     } else if (!PIN_read(PIN_ONOFF) && output && !invalid_pd) { // OFF -> ON
       invalid_pd = !PD_setPDOwithCurrent(pdonum, set_Voltage, set_Current);
-      DLY_ms(100);
+      for (uint8_t i = 0; i < 100; i++) { // instead of DLY_ms(100)
+        DLY_ms(1);
+        keepPD();
+        SEG_driver();
+      }
       if (!invalid_pd) {
         PIN_high(PIN_ONOFF);
       }
@@ -501,14 +517,6 @@ void manageDisp(uint16_t disp_set_Voltage, uint16_t disp_set_Current) {
   SEG_driver();
 }
 
-void keepPD() {
-  if (PD_getPDONum()) {
-    if (PD_Loop()) {
-      PD_setVoltage(5000);
-    }
-  }
-}
-
 void ppsmode_setup();
 void ppsmode_loop();
 void fiveVmode();
@@ -566,7 +574,10 @@ int main(void) {
   PD_connect();
   if (PD_getPDONum()) {
     PD_setVoltage(5000);
-    DLY_ms(100);
+    for (uint8_t i = 0; i < 100; i++) { // instead of DLY_ms(100)
+      DLY_ms(1);
+      keepPD();
+    }
     if (PD_getEPRCapable()) {
       if (!PD_setEPRMode(1)) {
       }
@@ -1503,6 +1514,7 @@ void testmode() {
     DLY_ms(1);
     SEG_setEach(counts[1], counts[2], counts[3], select_digit);
     SEG_driver();
+    keepPD();
     count++;
     if (count > MAXCOUNT) {
       count = 0;
@@ -1597,6 +1609,7 @@ void testmode() {
     count = BUTTON_read();
     DLY_ms(1);
     SEG_driver();
+    keepPD();
   } while (!BUTTON_IS_SHORT(count));
   PIN_low(PIN_ONOFF);
 
@@ -1612,6 +1625,7 @@ void testmode() {
   while (1) {
     SEG_driver();
     DLY_ms(1);
+    keepPD();
   }
 }
 
@@ -1706,7 +1720,7 @@ void calmode() {
   coeffv_b = 1000 * CALV2 - ((coeffv_a * aveV2) / 100);
 
   // disp result
-  SEG_setNumber(coeffv_a,false);
+  SEG_setNumber((uint32_t)-coeffv_a,false);
   CVCC_CV();
   do {
     count = BUTTON_read();
@@ -1926,6 +1940,7 @@ void triggersetmode_setup() {
     count = BUTTON_read();
     DLY_ms(1);
     SEG_driver();
+    keepPD();
   } while (!BUTTON_IS_SHORT(count));
 
   // init
@@ -2044,7 +2059,11 @@ void triggerdelmode() {
     trigger_voltage = 0;
     trigger_current = 0;
     if (writeCoeff()) {
-      DLY_ms(100);
+      for (uint8_t i = 0; i < 100; i++) { // instead of DLY_ms(100)
+        DLY_ms(1);
+        keepPD();
+        SEG_driver();
+      }
       if (!readTrigger()) {
         // sucess
         return; // return to mode_menu
