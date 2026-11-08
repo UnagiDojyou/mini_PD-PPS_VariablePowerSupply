@@ -1852,6 +1852,9 @@ void triggermode_setup() { // called when, init or Pdo changed
       if (!PD_setPDOwithCurrent(pdonum, set_Voltage, set_Current)) triggermode_waitpdo();
       break;
     case MODE_PPS:
+      if (PD_getEPRMode()) {
+        PD_setEPRMode(0);
+      }
       if (output) { // when change pdo
         if (!PD_setPDOwithCurrent(pdonum, set_Voltage, set_Current)) triggermode_waitpdo();
       } else { // init
