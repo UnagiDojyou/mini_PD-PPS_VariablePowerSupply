@@ -9,7 +9,7 @@ extern "C" {
 
 // Board Components
 #define DEBUG_VDD 3000 // 3V
-#define DEBUG_SHUNT_R 320 //10mΩ*32
+#define DEBUG_SHUNT_R 160 //10mΩ*32/2
 #define DEBUG_HIGH_R 10000 //10kΩ
 #define DEBUG_LOW_R 1000 //1kΩ
 #define DEBUG_I_OFFSET 0 // mA@0A
