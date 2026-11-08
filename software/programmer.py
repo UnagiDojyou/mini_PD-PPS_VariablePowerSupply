@@ -13,7 +13,7 @@
 #
 # On Windows you will need to install CH372 or Zadig driver.
 #
-# Connect while pressing the Down button.
+# The programmer waits for the device; connect while pressing the Down button.
 # Run "sudo python3 programmer.py pd_pps_variable.bin".
 # Run "sudo python3 programmer.py --erase" to erase all code flash.
 #
@@ -29,6 +29,15 @@ import sys
 import platform
 import ctypes
 import os
+import time
+
+
+class DeviceNotFound(Exception):
+    pass
+
+
+class BackendUnavailable(Exception):
+    pass
 
 # ===================================================================================
 # Main Function
@@ -39,8 +48,17 @@ def _main():
         sys.stderr.write('Usage: sudo python3 programmer.py <bin file | --erase>\n')
         sys.exit(1)
 
+    waiting = False
     try:
-        isp = Programmer()
+        while True:
+            try:
+                isp = Programmer()
+                break
+            except DeviceNotFound:
+                if not waiting:
+                    print('Waiting for USB device. Connect while pressing the Down button (Ctrl+C to cancel).', flush=True)
+                    waiting = True
+                time.sleep(1)
         isp.detect()
         if sys.argv[1] == '--erase':
             print('Erasing all code flash ...')
@@ -52,6 +70,9 @@ def _main():
             print('Verifying %d bytes ...' % len(data))
             isp.verify(data)
         isp.exit()
+    except KeyboardInterrupt:
+        print('\nCancelled.')
+        sys.exit(130)
     except Exception as ex:
         sys.stderr.write('ERROR: %s\n' % str(ex))
         sys.exit(1)
@@ -65,12 +86,12 @@ def _main():
 class UsbBackendPyUSB:
     def __init__(self, vid1, vid2, pid):
         if not PYUSB_AVAILABLE:
-            raise Exception("PyUSB not installed")
+            raise BackendUnavailable("PyUSB not installed")
         self.dev = usb.core.find(idVendor = vid1, idProduct = pid)
         if self.dev is None:
             self.dev = usb.core.find(idVendor = vid2, idProduct = pid)
             if self.dev is None:
-                raise Exception("Device not found via PyUSB")
+                raise DeviceNotFound("Device not found via PyUSB")
         try:
             self.dev.set_configuration()
         except:
@@ -102,7 +123,7 @@ class UsbBackendCH375:
                 dll_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), dll_name)
                 self.dll = ctypes.WinDLL(dll_path)
             except OSError:
-                raise Exception(f"{dll_name} not found")
+                raise BackendUnavailable(f"{dll_name} not found")
 
         self.dll.CH375OpenDevice.restype = ctypes.c_void_p
 
@@ -138,7 +159,7 @@ class UsbBackendCH375:
                 self.dll.CH375CloseDevice(ctypes.c_ulong(i))
                 
         if self.index == -1:
-            raise Exception("Device not found via CH375")
+            raise DeviceNotFound("Device not found via CH375")
 
     def __del__(self):
         self.close()
@@ -182,23 +203,39 @@ class Programmer:
         # Find device via backends
         self.backend = None
         err_msgs = []
+        device_not_found = False
+        backend_error = False
         
         # Try PyUSB first
         try:
             self.backend = UsbBackendPyUSB(CH_USB_VENDOR_ID1, CH_USB_VENDOR_ID2, CH_USB_PRODUCT_ID)
+        except DeviceNotFound as e:
+            device_not_found = True
+            err_msgs.append(f"PyUSB: {e}")
+        except BackendUnavailable as e:
+            err_msgs.append(f"PyUSB: {e}")
         except Exception as e:
+            backend_error = True
             err_msgs.append(f"PyUSB: {e}")
 
         # Try CH375 DLL on Windows if PyUSB failed
         if self.backend is None and platform.system() == "Windows":
             try:
                 self.backend = UsbBackendCH375(CH_USB_VENDOR_ID1, CH_USB_VENDOR_ID2, CH_USB_PRODUCT_ID)
+            except DeviceNotFound as e:
+                device_not_found = True
+                err_msgs.append(f"CH375: {e}")
+            except BackendUnavailable as e:
+                err_msgs.append(f"CH375: {e}")
             except Exception as e:
+                backend_error = True
                 err_msgs.append(f"CH375: {e}")
                 
         if self.backend is None:
+            if device_not_found and not backend_error:
+                raise DeviceNotFound()
             error_details = " | ".join(err_msgs)
-            raise Exception('"mini PD-PPS VariablePowerSupply" not found.\nConnect while pressing the Down button and rerun.\nDetails: ' + error_details)
+            raise Exception('Failed to access "mini PD-PPS VariablePowerSupply".\nDetails: ' + error_details)
 
         # Clear USB receive buffer
         try:    self.backend.read(CH_USB_EP_IN, 1024, 1)
